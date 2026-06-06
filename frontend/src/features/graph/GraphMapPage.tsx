@@ -1,5 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
+import ReactFlow, {
+  Node,
+  Edge,
+  addEdge,
+  Connection,
+  useNodesState,
+  useEdgesState,
+  Controls,
+  Background,
+  MiniMap,
+  MarkerType,
+  Position,
+} from "reactflow";
+import "reactflow/dist/style.css";
 import {
   Users,
   MapPin,
@@ -10,6 +24,8 @@ import {
   Plus,
   Trash2,
   Link as LinkIcon,
+  X,
+  Save,
 } from "lucide-react";
 import { graphApi, mapApi } from "@/api";
 import type { GraphNode, GraphEdge, GameMap, MapMarker } from "@/types";
@@ -46,14 +62,88 @@ const relationTypes = [
   "出现于",
 ];
 
+// Custom node component
+const CustomNode = ({ data }: { data: any }) => {
+  const Icon = nodeTypeIcons[data.nodeType] || Users;
+  const color = nodeTypeColors[data.nodeType] || "#6b7280";
+
+  return (
+    <div
+      className="px-4 py-2 shadow-md rounded-md border-2 bg-background"
+      style={{ borderColor: color }}
+    >
+      <div className="flex items-center gap-2">
+        <div
+          className="p-1 rounded-full"
+          style={{ backgroundColor: color + "20" }}
+        >
+          <Icon className="w-4 h-4" style={{ color }} />
+        </div>
+        <div className="font-medium text-sm">{data.label}</div>
+      </div>
+      {data.entityName && (
+        <div className="text-xs text-muted-foreground mt-1">
+          {data.entityName}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Custom edge component
+const CustomEdge = ({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  data,
+  style,
+}: any) => {
+  const edgePath = `M${sourceX},${sourceY} C${sourceX + 50},${sourceY} ${targetX - 50},${targetY} ${targetX},${targetY}`;
+
+  return (
+    <>
+      <path
+        id={id}
+        className="react-flow__edge-path"
+        d={edgePath}
+        style={style}
+      />
+      <text>
+        <textPath
+          href={`#${id}`}
+          style={{ fontSize: 12 }}
+          startOffset="50%"
+          textAnchor="middle"
+        >
+          {data?.label || ""}
+        </textPath>
+      </text>
+    </>
+  );
+};
+
+const nodeTypes = { custom: CustomNode };
+const edgeTypes = { custom: CustomEdge };
+
 export function GraphMapPage() {
   const { novelId } = useParams<{ novelId: string }>();
-  const [nodes, setNodes] = useState<GraphNode[]>([]);
-  const [edges, setEdges] = useState<GraphEdge[]>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [maps, setMaps] = useState<GameMap[]>([]);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
   const [activeTab, setActiveTab] = useState<"graph" | "map">("graph");
+  const [showNewNode, setShowNewNode] = useState(false);
+  const [newNodeLabel, setNewNodeLabel] = useState("");
+  const [newNodeType, setNewNodeType] = useState<string>("character");
+  const [showNewEdge, setShowNewEdge] = useState(false);
+  const [newEdgeSource, setNewEdgeSource] = useState("");
+  const [newEdgeTarget, setNewEdgeTarget] = useState("");
+  const [newEdgeType, setNewEdgeType] = useState(relationTypes[0]);
 
   useEffect(() => {
     if (novelId) {
@@ -66,8 +156,35 @@ export function GraphMapPage() {
     if (!novelId) return;
     try {
       const data = await graphApi.get(novelId);
-      setNodes(data.nodes);
-      setEdges(data.edges);
+
+      // Convert to React Flow format
+      const flowNodes: Node[] = data.nodes.map((node) => ({
+        id: node.id,
+        type: "custom",
+        position: { x: node.x, y: node.y },
+        data: {
+          label: node.label,
+          nodeType: node.nodeType,
+          entityId: node.entityId,
+        },
+      }));
+
+      const flowEdges: Edge[] = data.edges.map((edge) => ({
+        id: edge.id,
+        source: edge.sourceNodeId,
+        target: edge.targetNodeId,
+        type: "custom",
+        data: {
+          label: edge.label,
+          relationType: edge.relationType,
+          description: edge.description,
+        },
+        animated: true,
+        style: { stroke: "#6b7280" },
+      }));
+
+      setNodes(flowNodes);
+      setEdges(flowEdges);
     } catch (error) {
       console.error("Failed to load graph:", error);
     }
@@ -83,39 +200,184 @@ export function GraphMapPage() {
     }
   };
 
-  const handleAddNode = async (type: string) => {
-    if (!novelId) return;
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      setEdges((eds) => addEdge({ ...connection, animated: true }, eds));
+    },
+    [setEdges]
+  );
+
+  const onNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      // Find the original graph node
+      setSelectedNode({
+        id: node.id,
+        novelId: novelId || "",
+        nodeType: node.data.nodeType,
+        label: node.data.label,
+        x: node.position.x,
+        y: node.position.y,
+        entityId: node.data.entityId,
+        styleJson: {},
+        createdAt: "",
+        updatedAt: "",
+      });
+      setSelectedEdge(null);
+    },
+    [novelId]
+  );
+
+  const onEdgeClick = useCallback(
+    (_: React.MouseEvent, edge: Edge) => {
+      setSelectedEdge({
+        id: edge.id,
+        novelId: novelId || "",
+        sourceNodeId: edge.source,
+        targetNodeId: edge.target,
+        relationType: edge.data?.relationType || "",
+        label: edge.data?.label || "",
+        description: edge.data?.description || "",
+        evidenceChapterIds: [],
+        styleJson: {},
+        createdAt: "",
+        updatedAt: "",
+      });
+      setSelectedNode(null);
+    },
+    [novelId]
+  );
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNode(null);
+    setSelectedEdge(null);
+  }, []);
+
+  const handleAddNode = async () => {
+    if (!novelId || !newNodeLabel.trim()) return;
     try {
       const node = await graphApi.createNode(novelId, {
-        nodeType: type as GraphNode["nodeType"],
-        label: `新${nodeTypeIcons[type]?.displayName || "节点"}`,
+        nodeType: newNodeType as GraphNode["nodeType"],
+        label: newNodeLabel.trim(),
         x: Math.random() * 500,
-        y: Math.random() * 500,
-        styleJson: { color: nodeTypeColors[type] },
+        y: Math.random() * 300,
+        styleJson: { color: nodeTypeColors[newNodeType] },
       });
-      setNodes([...nodes, node]);
+
+      setNodes((nds) => [
+        ...nds,
+        {
+          id: node.id,
+          type: "custom",
+          position: { x: node.x, y: node.y },
+          data: {
+            label: node.label,
+            nodeType: node.nodeType,
+            entityId: node.entityId,
+          },
+        },
+      ]);
+
+      setNewNodeLabel("");
+      setShowNewNode(false);
     } catch (error) {
       console.error("Failed to add node:", error);
     }
   };
 
-  const handleAddEdge = async () => {
-    if (!novelId || !selectedNode) return;
-    // TODO: Implement edge creation UI
-  };
-
   const handleDeleteNode = async (nodeId: string) => {
     try {
       await graphApi.deleteNode(nodeId);
-      setNodes(nodes.filter((n) => n.id !== nodeId));
-      setEdges(edges.filter((e) => e.sourceNodeId !== nodeId && e.targetNodeId !== nodeId));
-      if (selectedNode?.id === nodeId) {
-        setSelectedNode(null);
-      }
+      setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+      setEdges((eds) =>
+        eds.filter((e) => e.source !== nodeId && e.target !== nodeId)
+      );
+      setSelectedNode(null);
     } catch (error) {
       console.error("Failed to delete node:", error);
     }
   };
+
+  const handleUpdateNodePosition = async (nodeId: string, position: { x: number; y: number }) => {
+    try {
+      await graphApi.updateNode(nodeId, {
+        x: position.x,
+        y: position.y,
+      });
+    } catch (error) {
+      console.error("Failed to update node position:", error);
+    }
+  };
+
+  const handleAddEdge = async () => {
+    if (!novelId || !newEdgeSource || !newEdgeTarget) return;
+    try {
+      const edge = await graphApi.createEdge(novelId, {
+        sourceNodeId: newEdgeSource,
+        targetNodeId: newEdgeTarget,
+        relationType: newEdgeType,
+        label: newEdgeType,
+        description: "",
+        evidenceChapterIds: [],
+        styleJson: {},
+      });
+
+      setEdges((eds) => [
+        ...eds,
+        {
+          id: edge.id,
+          source: edge.sourceNodeId,
+          target: edge.targetNodeId,
+          type: "custom",
+          data: {
+            label: edge.label,
+            relationType: edge.relationType,
+            description: edge.description,
+          },
+          animated: true,
+          style: { stroke: "#6b7280" },
+        },
+      ]);
+
+      setShowNewEdge(false);
+      setNewEdgeSource("");
+      setNewEdgeTarget("");
+    } catch (error) {
+      console.error("Failed to add edge:", error);
+    }
+  };
+
+  const handleDeleteEdge = async (edgeId: string) => {
+    try {
+      await graphApi.deleteEdge(edgeId);
+      setEdges((eds) => eds.filter((e) => e.id !== edgeId));
+      setSelectedEdge(null);
+    } catch (error) {
+      console.error("Failed to delete edge:", error);
+    }
+  };
+
+  const handleNodeDragStop = async (_: React.MouseEvent, node: Node) => {
+    await handleUpdateNodePosition(node.id, node.position);
+  };
+
+  // Node type options for dropdown
+  const nodeTypeOptions = Object.entries(nodeTypeIcons).map(([type, Icon]) => ({
+    value: type,
+    label:
+      type === "character"
+        ? "人物"
+        : type === "location"
+        ? "地点"
+        : type === "organization"
+        ? "组织"
+        : type === "event"
+        ? "事件"
+        : type === "item"
+        ? "物品"
+        : "线索",
+    icon: Icon,
+    color: nodeTypeColors[type],
+  }));
 
   return (
     <div className="flex h-full">
@@ -148,58 +410,160 @@ export function GraphMapPage() {
 
           {activeTab === "graph" ? (
             <>
-              {/* Add Node Buttons */}
+              {/* Add Node */}
               <div className="mb-6">
-                <h3 className="text-sm font-medium mb-2">添加节点</h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(nodeTypeIcons).map(([type, Icon]) => (
-                    <button
-                      key={type}
-                      onClick={() => handleAddNode(type)}
-                      className="flex items-center gap-2 px-3 py-2 border rounded-md text-sm hover:bg-accent transition-colors"
-                    >
-                      <Icon className="w-4 h-4" />
-                      {type === "character"
-                        ? "人物"
-                        : type === "location"
-                        ? "地点"
-                        : type === "organization"
-                        ? "组织"
-                        : type === "event"
-                        ? "事件"
-                        : type === "item"
-                        ? "物品"
-                        : "线索"}
-                    </button>
-                  ))}
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium">添加节点</h3>
+                  <button
+                    onClick={() => setShowNewNode(true)}
+                    className="p-1 rounded hover:bg-accent"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
                 </div>
+
+                {showNewNode && (
+                  <div className="p-3 border rounded-md mb-3">
+                    <select
+                      value={newNodeType}
+                      onChange={(e) => setNewNodeType(e.target.value)}
+                      className="w-full px-2 py-1 text-sm border rounded mb-2"
+                    >
+                      {nodeTypeOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={newNodeLabel}
+                      onChange={(e) => setNewNodeLabel(e.target.value)}
+                      placeholder="节点名称"
+                      className="w-full px-2 py-1 text-sm border rounded mb-2"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleAddNode();
+                        if (e.key === "Escape") setShowNewNode(false);
+                      }}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleAddNode}
+                        className="flex-1 px-2 py-1 text-xs bg-primary text-primary-foreground rounded"
+                      >
+                        创建
+                      </button>
+                      <button
+                        onClick={() => setShowNewNode(false)}
+                        className="flex-1 px-2 py-1 text-xs border rounded"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Add Edge */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium">添加关系</h3>
+                  <button
+                    onClick={() => setShowNewEdge(true)}
+                    className="p-1 rounded hover:bg-accent"
+                  >
+                    <LinkIcon className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {showNewEdge && (
+                  <div className="p-3 border rounded-md mb-3">
+                    <select
+                      value={newEdgeSource}
+                      onChange={(e) => setNewEdgeSource(e.target.value)}
+                      className="w-full px-2 py-1 text-sm border rounded mb-2"
+                    >
+                      <option value="">选择起点</option>
+                      {nodes.map((node) => (
+                        <option key={node.id} value={node.id}>
+                          {node.data.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={newEdgeTarget}
+                      onChange={(e) => setNewEdgeTarget(e.target.value)}
+                      className="w-full px-2 py-1 text-sm border rounded mb-2"
+                    >
+                      <option value="">选择终点</option>
+                      {nodes.map((node) => (
+                        <option key={node.id} value={node.id}>
+                          {node.data.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={newEdgeType}
+                      onChange={(e) => setNewEdgeType(e.target.value)}
+                      className="w-full px-2 py-1 text-sm border rounded mb-2"
+                    >
+                      {relationTypes.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleAddEdge}
+                        className="flex-1 px-2 py-1 text-xs bg-primary text-primary-foreground rounded"
+                      >
+                        创建
+                      </button>
+                      <button
+                        onClick={() => setShowNewEdge(false)}
+                        className="flex-1 px-2 py-1 text-xs border rounded"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Legend */}
               <div className="mb-6">
                 <h3 className="text-sm font-medium mb-2">图例</h3>
                 <div className="space-y-1">
-                  {Object.entries(nodeTypeColors).map(([type, color]) => (
-                    <div key={type} className="flex items-center gap-2 text-sm">
+                  {Object.entries(nodeTypeColors).map(([type, color]) => {
+                    const Icon = nodeTypeIcons[type] || Users;
+                    return (
                       <div
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: color }}
-                      />
-                      <span>
-                        {type === "character"
-                          ? "人物"
-                          : type === "location"
-                          ? "地点"
-                          : type === "organization"
-                          ? "组织"
-                          : type === "event"
-                          ? "事件"
-                          : type === "item"
-                          ? "物品"
-                          : "线索"}
-                      </span>
-                    </div>
-                  ))}
+                        key={type}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: color }}
+                        />
+                        <Icon className="w-3 h-3" style={{ color }} />
+                        <span>
+                          {type === "character"
+                            ? "人物"
+                            : type === "location"
+                            ? "地点"
+                            : type === "organization"
+                            ? "组织"
+                            : type === "event"
+                            ? "事件"
+                            : type === "item"
+                            ? "物品"
+                            : "线索"}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -216,6 +580,13 @@ export function GraphMapPage() {
                     </span>
                   ))}
                 </div>
+              </div>
+
+              {/* Stats */}
+              <div className="mt-6 pt-4 border-t">
+                <p className="text-sm text-muted-foreground">
+                  节点: {nodes.length} | 关系: {edges.length}
+                </p>
               </div>
             </>
           ) : (
@@ -278,23 +649,31 @@ export function GraphMapPage() {
       </aside>
 
       {/* Main Canvas Area */}
-      <div className="flex-1 relative bg-muted/30">
+      <div className="flex-1 relative">
         {activeTab === "graph" ? (
-          <div className="absolute inset-0 p-4">
-            {/* Graph Canvas - Placeholder for React Flow */}
-            <div className="w-full h-full border-2 border-dashed rounded-lg flex items-center justify-center">
-              <div className="text-center text-muted-foreground">
-                <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p className="text-lg font-medium">关系图谱</p>
-                <p className="text-sm">
-                  使用 React Flow 实现交互式图谱
-                </p>
-                <p className="text-sm mt-2">
-                  节点: {nodes.length} | 关系: {edges.length}
-                </p>
-              </div>
-            </div>
-          </div>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
+            onPaneClick={onPaneClick}
+            onNodeDragStop={handleNodeDragStop}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            fitView
+            attributionPosition="bottom-left"
+          >
+            <Controls />
+            <MiniMap
+              nodeStrokeWidth={3}
+              zoomable
+              pannable
+            />
+            <Background gap={16} size={1} />
+          </ReactFlow>
         ) : (
           <div className="absolute inset-0 p-4">
             {/* Map Canvas - Placeholder for Excalidraw */}
@@ -304,6 +683,9 @@ export function GraphMapPage() {
                 <p className="text-lg font-medium">地图绘制</p>
                 <p className="text-sm">
                   使用 Excalidraw 实现地图绘制
+                </p>
+                <p className="text-sm mt-2">
+                  地图数量: {maps.length}
                 </p>
               </div>
             </div>
@@ -342,18 +724,29 @@ export function GraphMapPage() {
                 <label className="text-sm font-medium text-muted-foreground">
                   类型
                 </label>
-                <div className="mt-1 px-3 py-2 border rounded-md bg-muted">
-                  {selectedNode.nodeType === "character"
-                    ? "人物"
-                    : selectedNode.nodeType === "location"
-                    ? "地点"
-                    : selectedNode.nodeType === "organization"
-                    ? "组织"
-                    : selectedNode.nodeType === "event"
-                    ? "事件"
-                    : selectedNode.nodeType === "item"
-                    ? "物品"
-                    : "线索"}
+                <div
+                  className="mt-1 px-3 py-2 border rounded-md flex items-center gap-2"
+                  style={{
+                    borderColor: nodeTypeColors[selectedNode.nodeType],
+                  }}
+                >
+                  {(() => {
+                    const Icon = nodeTypeIcons[selectedNode.nodeType] || Users;
+                    return <Icon className="w-4 h-4" style={{ color: nodeTypeColors[selectedNode.nodeType] }} />;
+                  })()}
+                  <span>
+                    {selectedNode.nodeType === "character"
+                      ? "人物"
+                      : selectedNode.nodeType === "location"
+                      ? "地点"
+                      : selectedNode.nodeType === "organization"
+                      ? "组织"
+                      : selectedNode.nodeType === "event"
+                      ? "事件"
+                      : selectedNode.nodeType === "item"
+                      ? "物品"
+                      : "线索"}
+                  </span>
                 </div>
               </div>
 
@@ -426,6 +819,14 @@ export function GraphMapPage() {
                   ))}
                 </div>
               </div>
+
+              <button
+                onClick={() => handleDeleteEdge(selectedEdge.id)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-destructive border border-destructive rounded-md hover:bg-destructive/10 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                删除关系
+              </button>
             </div>
           )}
 
