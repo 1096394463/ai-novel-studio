@@ -1,0 +1,33 @@
+server:
+  port: 8080
+  address: 127.0.0.1
+
+spring:
+  datasource:
+    url: jdbc:sqlite:./data/novel-studio.db
+    driver-class-name: org.sqlite.JDBC
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.ainovelstudio.novelstudio.model
+  configuration:
+    map-underscore-to-camel-case: true
+
+# AI Configuration
+ai:
+  model: gpt-4
+  api-key: ${AI_API_KEY:}
+  context:
+    window-size: 6
+    include-graph: true
+    include-map: true
+
+# Logging
+logging:
+  level:
+    com.ainovelstudio.novelstudio: DEBUG
+    org.sqlite: WARN
