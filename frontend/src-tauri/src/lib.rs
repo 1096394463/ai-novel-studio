@@ -11,33 +11,22 @@ pub fn run() {
     let app = tauri::Builder::default()
         .manage(BackendProcess(Mutex::new(None)))
         .setup(|app| {
-            // Determine JAR path
             let resource_dir = app
                 .path()
                 .resource_dir()
                 .expect("failed to get resource dir");
-            let jar_path = resource_dir.join("backend").join("novel-studio-backend.jar");
 
-            // Also check dev paths
-            let dev_jar_paths = vec![
-                app.path()
-                    .app_local_data_dir()
-                    .ok()
-                    .map(|p| p.join("backend").join("novel-studio-backend.jar")),
-                Some(std::path::PathBuf::from("../backend/target/novel-studio-backend-0.1.0.jar")),
-            ];
+            // Find JAR
+            let jar_path = find_file(&resource_dir, "backend/novel-studio-backend.jar", "novel-studio-backend*.jar");
 
-            let active_jar = if jar_path.exists() {
-                Some(jar_path)
-            } else {
-                dev_jar_paths.into_iter().flatten().find(|p| p.exists())
-            };
+            if let Some(jar) = jar_path {
+                // Find Java: prefer bundled JRE, fallback to system java
+                let java_cmd = find_java(&resource_dir);
 
-            if let Some(jar) = active_jar {
                 let jar_str = jar.to_string_lossy().to_string();
-                println!("Starting backend from: {}", jar_str);
+                println!("Starting backend: {} -jar {}", java_cmd, jar_str);
 
-                let child = Command::new("java")
+                let child = Command::new(&java_cmd)
                     .args([
                         "-jar",
                         &jar_str,
@@ -48,7 +37,6 @@ pub fn run() {
                     .spawn()
                     .expect("Failed to spawn Java backend");
 
-                // Store child for cleanup
                 if let Some(state) = app.try_state::<BackendProcess>() {
                     *state.0.lock().unwrap() = Some(child);
                 }
@@ -64,7 +52,6 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    // Run app and handle exit
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
             if let Some(state) = app_handle.try_state::<BackendProcess>() {
@@ -75,4 +62,60 @@ pub fn run() {
             }
         }
     });
+}
+
+/// Find bundled JRE java binary, fallback to system "java"
+fn find_java(resource_dir: &std::path::Path) -> String {
+    // Check bundled JRE in resource directory
+    #[cfg(target_os = "windows")]
+    let jre_bin = resource_dir.join("backend").join("jre").join("bin").join("java.exe");
+
+    #[cfg(not(target_os = "windows"))]
+    let jre_bin = resource_dir.join("backend").join("jre").join("bin").join("java");
+
+    if jre_bin.exists() {
+        println!("Using bundled JRE: {:?}", jre_bin);
+        return jre_bin.to_string_lossy().to_string();
+    }
+
+    // Also check relative to exe (for dev mode)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            #[cfg(target_os = "windows")]
+            let dev_jre = exe_dir.join("..").join("backend").join("jre").join("bin").join("java.exe");
+
+            #[cfg(not(target_os = "windows"))]
+            let dev_jre = exe_dir.join("..").join("backend").join("jre").join("bin").join("java");
+
+            if dev_jre.exists() {
+                println!("Using dev JRE: {:?}", dev_jre);
+                return dev_jre.to_string_lossy().to_string();
+            }
+        }
+    }
+
+    println!("No bundled JRE found, using system java");
+    "java".to_string()
+}
+
+/// Find a file in resource dir, trying exact path then glob pattern
+fn find_file(resource_dir: &std::path::Path, exact: &str, _pattern: &str) -> Option<std::path::PathBuf> {
+    let path = resource_dir.join(exact);
+    if path.exists() {
+        return Some(path);
+    }
+
+    // Try dev mode paths
+    let dev_paths = vec![
+        std::path::PathBuf::from("../backend/target/novel-studio-backend-0.1.0.jar"),
+        std::path::PathBuf::from("backend/target/novel-studio-backend-0.1.0.jar"),
+    ];
+
+    for p in dev_paths {
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    None
 }
