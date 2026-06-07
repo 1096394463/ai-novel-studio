@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegui/tauri/dev/crates/tauri-cli/schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for AI Novel Studio",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-spawn",
+    "shell:allow-execute",
+    "shell:default",
+    "process:default",
+    "fs:default",
+    "dialog:default"
+  ]
+}
