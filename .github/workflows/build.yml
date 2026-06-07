@@ -47,10 +47,10 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libayatana-appindicator3-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -60,13 +60,11 @@ jobs:
       - name: Build backend
         working-directory: backend
         run: mvn -B package -DskipTests
-        shell: bash
 
       - name: Prepare backend resources
         run: |
           mkdir -p frontend/src-tauri/backend
           cp backend/target/novel-studio-backend-*.jar frontend/src-tauri/backend/novel-studio-backend.jar
-        shell: bash
 
       - name: Install frontend dependencies
         working-directory: frontend
