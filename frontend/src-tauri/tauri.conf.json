@@ -36,16 +36,5 @@
       "backend/*"
     ]
   },
-  "plugins": {
-    "shell": {
-      "sidecar": true,
-      "scope": [
-        {
-          "name": "java",
-          "cmd": "java",
-          "args": true
-        }
-      ]
-    }
-  }
+  "plugins": {}
 }
