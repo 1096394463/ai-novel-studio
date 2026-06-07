@@ -1,18 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::Manager;
-use tauri_plugin_shell::ShellExt;
 
-struct BackendProcess(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
+struct BackendProcess(Mutex<Option<Child>>);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_dialog::init())
         .manage(BackendProcess(Mutex::new(None)))
         .setup(|app| {
             // Determine JAR path
@@ -41,9 +37,7 @@ pub fn run() {
                 let jar_str = jar.to_string_lossy().to_string();
                 println!("Starting backend from: {}", jar_str);
 
-                let shell = app.shell();
-                let (rx, child) = shell
-                    .command("java")
+                let child = Command::new("java")
                     .args([
                         "-jar",
                         &jar_str,
@@ -53,28 +47,6 @@ pub fn run() {
                     ])
                     .spawn()
                     .expect("Failed to spawn Java backend");
-
-                // Listen for backend output
-                tauri::async_runtime::spawn(async move {
-                    use tauri_plugin_shell::process::CommandEvent;
-                    while let Ok(event) = rx.recv().await {
-                        match event {
-                            CommandEvent::Stdout(line) => {
-                                let s = String::from_utf8_lossy(&line);
-                                println!("[backend] {}", s);
-                            }
-                            CommandEvent::Stderr(line) => {
-                                let s = String::from_utf8_lossy(&line);
-                                eprintln!("[backend] {}", s);
-                            }
-                            CommandEvent::Terminated(status) => {
-                                println!("Backend terminated with status: {:?}", status);
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
-                });
 
                 // Store child for cleanup
                 if let Some(state) = app.try_state::<BackendProcess>() {
@@ -96,7 +68,7 @@ pub fn run() {
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
             if let Some(state) = app_handle.try_state::<BackendProcess>() {
-                if let Some(child) = state.0.lock().unwrap().take() {
+                if let Some(child) = state.0.lock().unwrap().as_mut() {
                     let _ = child.kill();
                     println!("Java backend terminated on exit");
                 }
