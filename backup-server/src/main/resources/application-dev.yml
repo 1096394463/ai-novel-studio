@@ -1,0 +1,23 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+
+  flyway:
+    enabled: false
+
+jwt:
+  secret: test-secret-key-that-is-long-enough-for-hmac-sha256-algorithm
+  access-token-expiry: 7200000
+  refresh-token-expiry: 604800000
+
+storage:
+  path: ./test-backups
+  max-size-mb: 10

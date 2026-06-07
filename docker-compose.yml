@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  backup-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: novelstudio
+      POSTGRES_USER: novelstudio
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-novelstudio}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U novelstudio"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backup-server:
+    build: ./backup-server
+    ports:
+      - "8443:8443"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://backup-db:5432/novelstudio
+      SPRING_DATASOURCE_USERNAME: novelstudio
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-novelstudio}
+      JWT_SECRET: ${JWT_SECRET:-change-this-to-a-very-long-random-string-at-least-32-chars}
+      STORAGE_PATH: /data/backups
+    volumes:
+      - backup-data:/data/backups
+    depends_on:
+      backup-db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  backup-data:
