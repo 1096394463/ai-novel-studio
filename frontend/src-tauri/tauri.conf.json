@@ -9,7 +9,6 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "title": "AI Novel Studio",
     "windows": [
       {
         "title": "AI Novel Studio",
