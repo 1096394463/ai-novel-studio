@@ -2,6 +2,19 @@ import { create } from "zustand";
 import type { Novel, Chapter, WorldEntity, Idea } from "@/types";
 import { novelApi, chapterApi, entityApi, ideaApi } from "@/api";
 
+// API retry helper - waits for backend to be ready
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 10, delayMs = 1000): Promise<T> {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw new Error("unreachable");
+}
+
 interface NovelStore {
   novels: Novel[];
   currentNovel: Novel | null;
@@ -23,7 +36,7 @@ export const useNovelStore = create<NovelStore>((set) => ({
   fetchNovels: async () => {
     set({ loading: true, error: null });
     try {
-      const novels = await novelApi.list();
+      const novels = await withRetry(() => novelApi.list());
       set({ novels, loading: false });
     } catch (error) {
       set({ error: (error as Error).message, loading: false });
@@ -96,7 +109,7 @@ export const useChapterStore = create<ChapterStore>((set) => ({
   fetchChapters: async (novelId: string) => {
     set({ loading: true, error: null });
     try {
-      const chapters = await chapterApi.list(novelId);
+      const chapters = await withRetry(() => chapterApi.list(novelId));
       set({ chapters, loading: false });
     } catch (error) {
       set({ error: (error as Error).message, loading: false });

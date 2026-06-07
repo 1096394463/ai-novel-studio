@@ -81,8 +81,17 @@ export function NovelLibraryPage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-full text-destructive">
-        {error}
+      <div className="flex flex-col items-center justify-center h-full gap-4">
+        <div className="text-destructive text-center">
+          <p className="text-lg font-semibold mb-1">加载失败</p>
+          <p className="text-sm text-muted-foreground">{error}</p>
+        </div>
+        <button
+          onClick={() => fetchNovels()}
+          className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+        >
+          重试
+        </button>
       </div>
     );
   }
