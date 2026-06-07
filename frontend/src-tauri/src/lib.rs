@@ -1,21 +1,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::Mutex;
-use tauri::{Manager, RunEvent};
+use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
 
 struct BackendProcess(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(BackendProcess(Mutex::new(None)))
         .setup(|app| {
-            app.manage(BackendProcess(Mutex::new(None)));
-
             // Determine JAR path
             let resource_dir = app
                 .path()
@@ -56,10 +55,9 @@ pub fn run() {
                     .expect("Failed to spawn Java backend");
 
                 // Listen for backend output
-                let rx_clone = rx;
                 tauri::async_runtime::spawn(async move {
                     use tauri_plugin_shell::process::CommandEvent;
-                    while let Ok(event) = rx_clone.recv().await {
+                    while let Ok(event) = rx.recv().await {
                         match event {
                             CommandEvent::Stdout(line) => {
                                 let s = String::from_utf8_lossy(&line);
@@ -90,18 +88,19 @@ pub fn run() {
 
             Ok(())
         })
-        .on_event(|app, event| {
-            if let RunEvent::Exit = event {
-                // Kill Java backend on app exit
-                if let Some(state) = app.try_state::<BackendProcess>() {
-                    if let Some(child) = state.0.lock().unwrap().take() {
-                        let _ = child.kill();
-                        println!("Java backend terminated on exit");
-                    }
+        .invoke_handler(tauri::generate_handler![])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // Run app and handle exit
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            if let Some(state) = app_handle.try_state::<BackendProcess>() {
+                if let Some(child) = state.0.lock().unwrap().take() {
+                    let _ = child.kill();
+                    println!("Java backend terminated on exit");
                 }
             }
-        })
-        .invoke_handler(tauri::generate_handler![])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        }
+    });
 }
