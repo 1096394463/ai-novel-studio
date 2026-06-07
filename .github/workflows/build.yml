@@ -1,0 +1,116 @@
+name: Build AI Novel Studio
+
+on:
+push:
+tags:
+- 'v*'
+workflow_dispatch:
+
+permissions:
+contents: write
+
+jobs:
+build:
+strategy:
+fail-fast: false
+matrix:
+include:
+- platform: windows-latest
+target: x86_64-pc-windows-msvc
+- platform: macos-latest
+target: aarch64-apple-darwin
+- platform: macos-latest
+target: x86_64-apple-darwin
+- platform: ubuntu-22.04
+target: x86_64-unknown-linux-gnu
+
+runs-on: ${{ matrix.platform }}
+
+steps:
+- name: Checkout
+uses: actions/checkout@v4
+
+- name: Set up JDK 21
+uses: adoptium/temurin-action@v1
+with:
+version: '21'
+
+- name: Set up Maven
+uses: stCarolas/setup-maven@v5
+with:
+maven-version: '3.9.9'
+
+- name: Setup Node.js
+uses: actions/setup-node@v4
+with:
+node-version: '20'
+
+- name: Install Rust stable
+uses: dtolnay/rust-toolchain@stable
+with:
+targets: ${{ matrix.target }}
+
+- name: Install Linux dependencies
+if: matrix.platform == 'ubuntu-22.04'
+run: |
+sudo apt-get update
+sudo apt-get install -y \
+libwebkit2gtk-4.1-dev \
+libappindicator3-dev \
+librsvg2-dev \
+patchelf \
+libgtk-3-dev \
+libayatana-appindicator3-dev
+
+- name: Rust cache
+uses: swatinem/rust-cache@v2
+with:
+workspaces: './frontend/src-tauri -> target'
+
+- name: Build backend
+working-directory: backend
+run: mvn -B package -DskipTests
+shell: bash
+
+- name: Prepare backend resources
+run: |
+mkdir -p frontend/src-tauri/backend
+cp backend/target/novel-studio-backend-*.jar frontend/src-tauri/backend/novel-studio-backend.jar
+shell: bash
+
+- name: Download JRE for bundling
+run: |
+mkdir -p frontend/src-tauri/backend/jre
+if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+curl -L -o jre.zip "https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse"
+7z x jre.zip -ojre_temp
+cp -r jre_temp/jdk-21*/* frontend/src-tauri/backend/jre/
+elif [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+if [[ "${{ matrix.target }}" == "aarch64-apple-darwin" ]]; then
+curl -L -o jre.tar.gz "https://api.adoptium.net/v3/binary/latest/21/ga/mac/aarch64/jre/hotspot/normal/eclipse"
+else
+curl -L -o jre.tar.gz "https://api.adoptium.net/v3/binary/latest/21/ga/mac/x64/jre/hotspot/normal/eclipse"
+fi
+tar xzf jre.tar.gz
+mv jdk-21*/Contents/Home/* frontend/src-tauri/backend/jre/
+else
+curl -L -o jre.tar.gz "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jre/hotspot/normal/eclipse"
+tar xzf jre.tar.gz
+mv jdk-21*-jre/* frontend/src-tauri/backend/jre/
+fi
+shell: bash
+
+- name: Install frontend dependencies
+working-directory: frontend
+run: npm ci
+
+- name: Build Tauri app
+uses: tauri-apps/tauri-action@v0
+env:
+GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+with:
+tagName: ${{ github.ref_name }}
+releaseName: 'AI Novel Studio ${{ github.ref_name }}'
+releaseBody: 'Download AI Novel Studio for your platform.'
+releaseDraft: true
+args: '--target ${{ matrix.target }}'
