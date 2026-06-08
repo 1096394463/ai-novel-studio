@@ -18,7 +18,13 @@ pub fn run() {
                 .resource_dir()
                 .expect("failed to get resource dir");
 
+            // Determine app data directory for DB and logs
+            let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| resource_dir.clone());
+            std::fs::create_dir_all(&app_data_dir).ok();
+            let data_dir_str = app_data_dir.to_string_lossy().to_string();
+
             println!("[Backend] Resource dir: {:?}", resource_dir);
+            println!("[Backend] App data dir: {:?}", app_data_dir);
 
             // Find JAR
             let jar_path = find_file(&resource_dir, "backend/novel-studio-backend.jar", "novel-studio-backend*.jar");
@@ -30,7 +36,6 @@ pub fn run() {
 
                 println!("[Backend] JAR path: {}", jar_str);
                 println!("[Backend] Java command: {}", java_cmd);
-                println!("[Backend] Spawning: {} -jar {} --server.port=18080 --spring.profiles.active=desktop", java_cmd, jar_str);
 
                 let mut child = Command::new(&java_cmd)
                     .args([
@@ -39,7 +44,10 @@ pub fn run() {
                         "--server.port=18080",
                         "--server.address=127.0.0.1",
                         "--spring.profiles.active=desktop",
+                        &format!("--spring.datasource.url=jdbc:sqlite:{}/novel-studio.db", data_dir_str),
+                        &format!("--logging.file.name={}/novel-studio.log", data_dir_str),
                     ])
+                    .current_dir(&app_data_dir)
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
                     .spawn()
@@ -79,13 +87,15 @@ pub fn run() {
                 }
 
                 // Health check in background
-                thread::spawn(|| {
+                let data_dir_for_check = app_data_dir.clone();
+                thread::spawn(move || {
                     println!("[Backend] Waiting for backend to become ready...");
                     for i in 1..=30 {
                         std::thread::sleep(std::time::Duration::from_secs(1));
                         match std::net::TcpStream::connect("127.0.0.1:18080") {
                             Ok(_) => {
                                 println!("[Backend] ✅ Backend is ready (attempt {}/30)", i);
+                                println!("[Backend] Data dir: {:?}", data_dir_for_check);
                                 return;
                             }
                             Err(e) => {
