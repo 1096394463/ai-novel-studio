@@ -112,7 +112,7 @@ pub fn run() {
                             *state.0.lock().unwrap() = Some(child);
                         }
 
-                        let status_handle = app.state::<BackendStatus>();
+                        let app_handle = app.handle().clone();
                         thread::spawn(move || {
                             println!("[Backend] Waiting for backend to become ready...");
                             for i in 1..=60 {
@@ -120,7 +120,7 @@ pub fn run() {
                                 match std::net::TcpStream::connect("127.0.0.1:18080") {
                                     Ok(_) => {
                                         println!("[Backend] ✅ Backend is ready (attempt {}/60)", i);
-                                        *status_handle.0.lock().unwrap() = "ready".to_string();
+                                        *app_handle.state::<BackendStatus>().0.lock().unwrap() = "ready".to_string();
                                         return;
                                     }
                                     Err(e) => {
@@ -131,7 +131,7 @@ pub fn run() {
                                 }
                             }
                             eprintln!("[Backend] ❌ Backend did not start within 60s!");
-                            *status_handle.0.lock().unwrap() = "failed".to_string();
+                            *app_handle.state::<BackendStatus>().0.lock().unwrap() = "failed".to_string();
                         });
                     }
                     Err(e) => {
