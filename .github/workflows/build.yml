@@ -75,20 +75,38 @@ jobs:
         run: |
           mkdir -p frontend/src-tauri/backend/jre
 
+          download_with_retry() {
+            local url="$1"
+            local output="$2"
+            for attempt in 1 2 3; do
+              echo "Download attempt $attempt: $url"
+              curl -L --retry 3 --retry-delay 5 -o "$output" "$url"
+              # Verify file is > 1MB (not an error page)
+              if [ -f "$output" ] && [ $(stat -c%s "$output" 2>/dev/null || stat -f%z "$output" 2>/dev/null || echo 0) -gt 1000000 ]; then
+                echo "Download successful ($(stat -c%s "$output" 2>/dev/null || stat -f%z "$output") bytes)"
+                return 0
+              fi
+              echo "Download failed or too small, retrying..."
+              sleep 10
+            done
+            echo "ERROR: Failed to download JRE after 3 attempts"
+            exit 1
+          }
+
           if [ "${{ matrix.jre_platform }}" = "windows-x64" ]; then
-            curl -L -o jre.zip "https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse"
+            download_with_retry "https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse" "jre.zip"
             7z x jre.zip -ojre_extract
             mv jre_extract/jdk-21*/* frontend/src-tauri/backend/jre/
           elif [ "${{ matrix.jre_platform }}" = "mac-aarch64" ]; then
-            curl -L -o jre.tar.gz "https://api.adoptium.net/v3/binary/latest/21/ga/mac/aarch64/jre/hotspot/normal/eclipse"
+            download_with_retry "https://api.adoptium.net/v3/binary/latest/21/ga/mac/aarch64/jre/hotspot/normal/eclipse" "jre.tar.gz"
             tar xzf jre.tar.gz
             mv jdk-21*/Contents/Home/* frontend/src-tauri/backend/jre/
           elif [ "${{ matrix.jre_platform }}" = "mac-x64" ]; then
-            curl -L -o jre.tar.gz "https://api.adoptium.net/v3/binary/latest/21/ga/mac/x64/jre/hotspot/normal/eclipse"
+            download_with_retry "https://api.adoptium.net/v3/binary/latest/21/ga/mac/x64/jre/hotspot/normal/eclipse" "jre.tar.gz"
             tar xzf jre.tar.gz
             mv jdk-21*/Contents/Home/* frontend/src-tauri/backend/jre/
           else
-            curl -L -o jre.tar.gz "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jre/hotspot/normal/eclipse"
+            download_with_retry "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jre/hotspot/normal/eclipse" "jre.tar.gz"
             tar xzf jre.tar.gz
             mv jdk-21*-jre/* frontend/src-tauri/backend/jre/
           fi
