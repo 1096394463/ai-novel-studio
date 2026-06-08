@@ -8,8 +8,10 @@ import {
   Clock,
   X,
   Search,
+  Trash2,
 } from "lucide-react";
 import { useNovelStore } from "@/stores";
+import { novelApi } from "@/api";
 
 const statusLabels: Record<string, string> = {
   setting: "设定中",
@@ -44,6 +46,18 @@ export function NovelLibraryPage() {
   useEffect(() => {
     fetchNovels();
   }, [fetchNovels]);
+
+  const handleDeleteNovel = async (novelId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm("确定要删除这部作品吗？")) return;
+    try {
+      await novelApi.delete(novelId);
+      fetchNovels();
+    } catch (error) {
+      console.error("Failed to delete novel:", error);
+    }
+  };
 
   const handleCreateNovel = async () => {
     if (!newNovel.title.trim()) return;
@@ -167,8 +181,16 @@ export function NovelLibraryPage() {
             key={novel.id}
             to={`/editor/${novel.id}`}
             onClick={() => setCurrentNovelId(novel.id)}
-            className="block p-4 bg-card rounded-lg border hover:shadow-md transition-all hover:border-primary/30 group"
+            className="block p-4 bg-card rounded-lg border hover:shadow-md transition-all hover:border-primary/30 group relative"
           >
+            {/* Delete button */}
+            <button
+              onClick={(e) => handleDeleteNovel(novel.id, e)}
+              className="absolute top-2 right-2 p-1.5 rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all z-10"
+              title="删除作品"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
             <div className="flex items-start gap-4">
               <div className="w-16 h-20 bg-gradient-to-br from-primary/20 to-primary/5 rounded flex items-center justify-center flex-shrink-0">
                 {novel.coverPath ? (
