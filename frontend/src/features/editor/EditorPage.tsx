@@ -78,6 +78,7 @@ export function EditorPage() {
     if (novelId) {
       fetchNovel(novelId);
       fetchChapters(novelId);
+      setSelectedChapterId(null); // Reset when switching novels
     }
   }, [novelId, fetchNovel, fetchChapters]);
 
