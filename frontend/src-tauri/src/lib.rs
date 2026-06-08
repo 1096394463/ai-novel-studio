@@ -14,6 +14,16 @@ fn log(log_state: &Mutex<Vec<String>>, msg: &str) {
     log_state.lock().unwrap().push(msg.to_string());
 }
 
+/// Strip Windows \\?\ prefix from paths (cmd.exe doesn't understand it)
+fn strip_unc_prefix(path: &std::path::Path) -> String {
+    let s = path.to_string_lossy().to_string();
+    if s.starts_with(r"\\?\") {
+        s[4..].to_string()
+    } else {
+        s
+    }
+}
+
 #[tauri::command]
 fn get_backend_status(status: tauri::State<BackendStatus>) -> String {
     status.0.lock().unwrap().clone()
@@ -42,7 +52,7 @@ pub fn run() {
 
             let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| resource_dir.clone());
             std::fs::create_dir_all(&app_data_dir).ok();
-            let data_dir_str = app_data_dir.to_string_lossy().to_string();
+            let data_dir_str = strip_unc_prefix(&app_data_dir);
 
             log(slog, &format!("Resource dir: {}", resource_dir.display()));
             log(slog, &format!("App data dir: {}", app_data_dir.display()));
@@ -70,9 +80,9 @@ pub fn run() {
 
             if let Some(jar) = jar_path {
                 let java_cmd = find_java(&resource_dir);
-                let jar_str = jar.to_string_lossy().to_string();
-                let java_log = app_data_dir.join("java-stdout.log").to_string_lossy().to_string();
-                let java_err_log = app_data_dir.join("java-stderr.log").to_string_lossy().to_string();
+                let jar_str = strip_unc_prefix(&jar);
+                let java_log = strip_unc_prefix(&app_data_dir.join("java-stdout.log"));
+                let java_err_log = strip_unc_prefix(&app_data_dir.join("java-stderr.log"));
                 let db_url = format!("jdbc:sqlite:{}/novel-studio.db", data_dir_str);
                 let log_file = format!("{}/novel-studio.log", data_dir_str);
 
@@ -102,16 +112,17 @@ pub fn run() {
                 #[cfg(target_os = "windows")]
                 {
                     let bat_path = app_data_dir.join("start-backend.bat");
+                    let bat_path_str = strip_unc_prefix(&bat_path);
                     let bat_content = format!(
                         "@echo off\r\nchcp 65001 >nul\r\necho [BAT] Starting Java backend at %TIME% > \"{}\"\r\necho [BAT] Java: {} >> \"{}\"\r\necho [BAT] JAR: {} >> \"{}\"\r\necho [BAT] CWD: {} >> \"{}\"\r\n\"{}\" -jar \"{}\" --server.port=18080 --server.address=127.0.0.1 --spring.profiles.active=desktop --spring.datasource.url={} --logging.file.name={} >> \"{}\" 2>&1\r\necho [BAT] Java exited with code %ERRORLEVEL% at %TIME% >> \"{}\"\r\n",
                         java_err_log, java_cmd, java_err_log, jar_str, java_err_log, data_dir_str, java_err_log,
                         java_cmd, jar_str, db_url, log_file, java_err_log, java_err_log
                     );
                     std::fs::write(&bat_path, &bat_content).ok();
-                    log(slog, &format!("Wrote launcher: {}", bat_path.display()));
+                    log(slog, &format!("Wrote launcher: {}", bat_path_str));
 
                     let mut child = Command::new("cmd")
-                        .args(["/C", bat_path.to_string_lossy().as_ref()])
+                        .args(["/C", &bat_path_str])
                         .current_dir(&app_data_dir)
                         .stdin(Stdio::null())
                         .stdout(Stdio::null())
@@ -165,6 +176,7 @@ pub fn run() {
                 #[cfg(not(target_os = "windows"))]
                 {
                     let sh_path = app_data_dir.join("start-backend.sh");
+                    let sh_path_str = strip_unc_prefix(&sh_path);
                     let sh_content = format!(
                         "#!/bin/bash\necho \"[SH] Starting Java backend at $(date)\" > \"{}\"\n\"{}\" -jar \"{}\" --server.port=18080 --server.address=127.0.0.1 --spring.profiles.active=desktop --spring.datasource.url={} --logging.file.name={} >> \"{}\" 2>&1\necho \"[SH] Java exited with code $? at $(date)\" >> \"{}\"\n",
                         java_err_log, java_cmd, jar_str, db_url, log_file, java_err_log, java_err_log
@@ -172,7 +184,7 @@ pub fn run() {
                     std::fs::write(&sh_path, &sh_content).ok();
 
                     let mut child = Command::new("bash")
-                        .arg(sh_path.to_string_lossy().as_ref())
+                        .arg(&sh_path_str)
                         .current_dir(&app_data_dir)
                         .stdin(Stdio::null())
                         .stdout(Stdio::null())
@@ -224,7 +236,7 @@ pub fn run() {
                 // Health check with startup log
                 let app_handle = app.handle().clone();
                 let log_file_path = log_file.clone();
-                let err_log_path = app_data_dir.join("java-stderr.log").to_string_lossy().to_string();
+                let err_log_path = strip_unc_prefix(&app_data_dir.join("java-stderr.log"));
                 thread::spawn(move || {
                     for i in 1..=60 {
                         thread::sleep(std::time::Duration::from_secs(1));
@@ -302,7 +314,7 @@ fn find_java(resource_dir: &std::path::Path) -> String {
     let jre_bin = resource_dir.join("backend").join("jre").join("bin").join("java");
 
     if jre_bin.exists() {
-        return jre_bin.to_string_lossy().to_string();
+        return strip_unc_prefix(&jre_bin);
     }
 
     "java".to_string()
