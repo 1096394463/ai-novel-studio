@@ -144,6 +144,7 @@ export function GraphMapPage() {
   const [newEdgeSource, setNewEdgeSource] = useState("");
   const [newEdgeTarget, setNewEdgeTarget] = useState("");
   const [newEdgeType, setNewEdgeType] = useState(relationTypes[0]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (novelId) {
@@ -156,6 +157,7 @@ export function GraphMapPage() {
     if (!novelId) return;
     try {
       const data = await graphApi.get(novelId);
+      setError(null);
 
       // Convert to React Flow format
       const flowNodes: Node[] = data.nodes.map((node) => ({
@@ -186,7 +188,7 @@ export function GraphMapPage() {
       setNodes(flowNodes);
       setEdges(flowEdges);
     } catch (error) {
-      console.error("Failed to load graph:", error);
+      setError(error.message || "加载图谱失败");
     }
   };
 
@@ -196,7 +198,7 @@ export function GraphMapPage() {
       const data = await mapApi.list(novelId);
       setMaps(data);
     } catch (error) {
-      console.error("Failed to load maps:", error);
+      setError(error.message || "加载地图失败");
     }
   };
 
@@ -280,7 +282,7 @@ export function GraphMapPage() {
       setNewNodeLabel("");
       setShowNewNode(false);
     } catch (error) {
-      console.error("Failed to add node:", error);
+      setError(error.message || "添加节点失败");
     }
   };
 
@@ -293,7 +295,7 @@ export function GraphMapPage() {
       );
       setSelectedNode(null);
     } catch (error) {
-      console.error("Failed to delete node:", error);
+      setError(error.message || "删除节点失败");
     }
   };
 
@@ -304,7 +306,7 @@ export function GraphMapPage() {
         y: position.y,
       });
     } catch (error) {
-      console.error("Failed to update node position:", error);
+      setError(error.message || "更新位置失败");
     }
   };
 
@@ -342,7 +344,7 @@ export function GraphMapPage() {
       setNewEdgeSource("");
       setNewEdgeTarget("");
     } catch (error) {
-      console.error("Failed to add edge:", error);
+      setError(error.message || "添加关系失败");
     }
   };
 
@@ -352,7 +354,7 @@ export function GraphMapPage() {
       setEdges((eds) => eds.filter((e) => e.id !== edgeId));
       setSelectedEdge(null);
     } catch (error) {
-      console.error("Failed to delete edge:", error);
+      setError(error.message || "删除关系失败");
     }
   };
 
@@ -381,6 +383,14 @@ export function GraphMapPage() {
 
   return (
     <div className="flex h-full">
+      {/* Error Toast */}
+      {error && (
+        <div className="fixed top-4 right-4 z-50 bg-destructive text-destructive-foreground px-4 py-2 rounded-md shadow-lg flex items-center gap-2">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="hover:opacity-80">✕</button>
+        </div>
+      )}
+
       {/* Left Panel - Controls */}
       <aside className="w-64 border-r bg-card overflow-y-auto">
         <div className="p-4">
