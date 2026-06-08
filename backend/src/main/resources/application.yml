@@ -16,6 +16,7 @@ spring:
 mybatis:
   mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.ainovelstudio.novelstudio.model
+  type-handlers-package: com.ainovelstudio.novelstudio.config
   configuration:
     map-underscore-to-camel-case: true
 
