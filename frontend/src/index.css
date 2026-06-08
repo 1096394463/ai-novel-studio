@@ -35,3 +35,40 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* TipTap Editor Styles */
+.tiptap {
+  outline: none;
+  min-height: 100%;
+  padding: 0;
+  cursor: text;
+}
+
+.tiptap p {
+  margin: 0.5em 0;
+  line-height: 1.8;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #adb5bd;
+  pointer-events: none;
+  height: 0;
+  font-style: italic;
+}
+
+.tiptap:focus {
+  outline: none;
+}
+
+/* Ensure the editor content fills the area */
+.ProseMirror {
+  outline: none;
+  min-height: 100%;
+}
+
+.ProseMirror p {
+  margin: 0.5em 0;
+  line-height: 1.8;
+}

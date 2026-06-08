@@ -632,8 +632,12 @@ export function EditorPage() {
         </div>
 
         {/* Editor Content */}
-        <div className="flex-1 overflow-y-auto p-8">
-          <div className="max-w-3xl mx-auto">
+        <div
+          className="flex-1 overflow-y-auto"
+          onClick={() => editor?.commands.focus()}
+          style={{ cursor: "text" }}
+        >
+          <div className="max-w-3xl mx-auto p-8 min-h-full">
             {/* Chapter Title */}
             <input
               type="text"
@@ -655,6 +659,7 @@ export function EditorPage() {
             <EditorContent
               editor={editor}
               className="prose prose-lg max-w-none"
+              style={{ minHeight: "calc(100vh - 280px)" }}
             />
           </div>
         </div>
