@@ -57,6 +57,8 @@ export const chapterApi = {
       method: "POST",
       body: JSON.stringify(content),
     }),
+  delete: (id: string) =>
+    request<void>(`/chapters/${id}`, { method: "DELETE" }),
   lock: (id: string) =>
     request<void>(`/chapters/${id}/lock`, { method: "POST" }),
   unlock: (id: string) =>
