@@ -38,7 +38,7 @@ import {
   Check,
 } from "lucide-react";
 import { useNovelStore, useChapterStore } from "@/stores";
-import { aiApi, chapterApi } from "@/api";
+import { aiApi, chapterApi, novelApi } from "@/api";
 import type { ChapterVersion, AiTask } from "@/types";
 
 export function EditorPage() {
@@ -97,6 +97,11 @@ export function EditorPage() {
       try {
         await saveChapter(selectedChapterId, content);
         setLastSaved(new Date());
+        // Refresh chapter list to update word count
+        if (novelId) {
+          fetchChapters(novelId);
+          novelApi.recalculateWords(novelId).catch(() => {});
+        }
       } finally {
         clearTimeout(timer);
         setIsSaving(false);
@@ -239,8 +244,9 @@ export function EditorPage() {
         await chapterApi.lock(selectedChapterId);
       }
       fetchChapter(selectedChapterId);
-    } catch (error) {
-      console.error("Failed to toggle lock:", error);
+      if (novelId) fetchChapters(novelId);
+    } catch (error: any) {
+      alert(error.message || "锁定操作失败");
     }
   };
 
@@ -260,9 +266,10 @@ export function EditorPage() {
     try {
       await chapterApi.restoreVersion(selectedChapterId, versionId);
       fetchChapter(selectedChapterId);
+      if (novelId) fetchChapters(novelId);
       setShowVersions(false);
-    } catch (error) {
-      console.error("Failed to restore version:", error);
+    } catch (error: any) {
+      alert(error.message || "恢复版本失败");
     }
   };
 
