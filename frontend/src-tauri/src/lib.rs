@@ -70,8 +70,8 @@ pub fn run() {
                 log(slog, &format!("JAR found: {}", jar_str));
                 log(slog, &format!("Java command: {}", java_cmd));
 
-                let mut child = Command::new(&java_cmd)
-                    .args([
+                let mut cmd = Command::new(&java_cmd);
+                cmd.args([
                         "-jar",
                         &jar_str,
                         "--server.port=18080",
@@ -81,12 +81,40 @@ pub fn run() {
                         &format!("--logging.file.name={}/novel-studio.log", data_dir_str),
                     ])
                     .current_dir(&app_data_dir)
+                    .stdin(Stdio::null())
                     .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn();
+                    .stderr(Stdio::piped());
+
+                // On Windows, prevent creating a new console window
+                #[cfg(target_os = "windows")]
+                {
+                    use std::os::windows::process::CommandExt;
+                    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                }
+
+                let mut child = cmd.spawn();
 
                 match child {
                     Ok(mut child) => {
+                        let pid = child.id();
+                        log(slog, &format!("Java process spawned, PID: {:?}", pid));
+
+                        // Check if process is still alive immediately
+                        match child.try_wait() {
+                            Ok(Some(status)) => {
+                                log(slog, &format!("❌ Java process exited immediately with status: {}", status));
+                                if let Some(s) = app.try_state::<BackendStatus>() {
+                                    *s.0.lock().unwrap() = format!("exited_immediately: {}", status);
+                                }
+                            }
+                            Ok(None) => {
+                                log(slog, "✅ Java process is running");
+                            }
+                            Err(e) => {
+                                log(slog, &format!("try_wait error: {}", e));
+                            }
+                        }
+
                         if let Some(stdout) = child.stdout.take() {
                             thread::spawn(move || {
                                 let reader = BufReader::new(stdout);
@@ -105,9 +133,6 @@ pub fn run() {
                             });
                         }
 
-                        let pid = child.id();
-                        log(slog, &format!("Java process spawned, PID: {:?}", pid));
-
                         if let Some(state) = app.try_state::<BackendProcess>() {
                             *state.0.lock().unwrap() = Some(child);
                         }
@@ -117,6 +142,22 @@ pub fn run() {
                             println!("[Backend] Waiting for backend to become ready...");
                             for i in 1..=60 {
                                 std::thread::sleep(std::time::Duration::from_secs(1));
+
+                                // Check if process is still alive
+                                if let Some(proc) = app_handle.try_state::<BackendProcess>() {
+                                    if let Some(child) = proc.0.lock().unwrap().as_mut() {
+                                        match child.try_wait() {
+                                            Ok(Some(status)) => {
+                                                eprintln!("[Backend] ❌ Java process exited with: {}", status);
+                                                *app_handle.state::<BackendStatus>().0.lock().unwrap() = format!("exited: {}", status);
+                                                return;
+                                            }
+                                            Ok(None) => {} // still running
+                                            Err(_) => {}
+                                        }
+                                    }
+                                }
+
                                 match std::net::TcpStream::connect("127.0.0.1:18080") {
                                     Ok(_) => {
                                         println!("[Backend] ✅ Backend is ready (attempt {}/60)", i);
