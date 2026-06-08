@@ -286,7 +286,20 @@ export function EditorPage() {
     if (!selectedChapterId) return;
     try {
       await chapterApi.restoreVersion(selectedChapterId, versionId);
-      fetchChapter(selectedChapterId);
+      // Fetch fresh chapter data directly and update editor
+      const freshChapter = await chapterApi.get(selectedChapterId);
+      if (editor && freshChapter) {
+        setIsContentReady(false);
+        try {
+          const content = freshChapter.contentJson
+            ? JSON.parse(freshChapter.contentJson)
+            : "";
+          editor.commands.setContent(content);
+        } catch {
+          editor.commands.setContent("");
+        }
+        setTimeout(() => setIsContentReady(true), 300);
+      }
       if (novelId) fetchChapters(novelId);
       setShowVersions(false);
     } catch (error: any) {
