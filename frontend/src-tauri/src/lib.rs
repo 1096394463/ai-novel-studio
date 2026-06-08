@@ -8,10 +8,23 @@ use tauri::Manager;
 
 struct BackendProcess(Mutex<Option<Child>>);
 struct BackendStatus(Mutex<String>); // "starting" | "jar_not_found" | "ready" | "failed"
+struct StartupLog(Mutex<Vec<String>>);
+
+fn log(app: &tauri::AppHandle, msg: &str) {
+    println!("{}", msg);
+    if let Some(state) = app.try_state::<StartupLog>() {
+        state.0.lock().unwrap().push(msg.to_string());
+    }
+}
 
 #[tauri::command]
 fn get_backend_status(status: tauri::State<BackendStatus>) -> String {
     status.0.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn get_startup_log(log_state: tauri::State<StartupLog>) -> Vec<String> {
+    log_state.0.lock().unwrap().clone()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -19,7 +32,8 @@ pub fn run() {
     let app = tauri::Builder::default()
         .manage(BackendProcess(Mutex::new(None)))
         .manage(BackendStatus(Mutex::new("starting".to_string())))
-        .invoke_handler(tauri::generate_handler![get_backend_status])
+        .manage(StartupLog(Mutex::new(Vec::new())))
+        .invoke_handler(tauri::generate_handler![get_backend_status, get_startup_log])
         .setup(|app| {
             let resource_dir = app
                 .path()
@@ -34,6 +48,17 @@ pub fn run() {
             println!("[Backend] Resource dir: {:?}", resource_dir);
             println!("[Backend] App data dir: {:?}", app_data_dir);
 
+            // Log to startup log for frontend
+            log(app, &format!("Resource dir: {:?}", resource_dir));
+            log(app, &format!("App data dir: {:?}", app_data_dir));
+
+            // List resource dir contents
+            if let Ok(entries) = std::fs::read_dir(&resource_dir) {
+                for entry in entries.flatten() {
+                    log(app, &format!("  - {:?}", entry.path()));
+                }
+            }
+
             // Find JAR
             let jar_path = find_file(&resource_dir, "backend/novel-studio-backend.jar", "novel-studio-backend*.jar");
 
@@ -42,8 +67,8 @@ pub fn run() {
                 let java_cmd = find_java(&resource_dir);
                 let jar_str = jar.to_string_lossy().to_string();
 
-                println!("[Backend] JAR path: {}", jar_str);
-                println!("[Backend] Java command: {}", java_cmd);
+                log(app, &format!("JAR found: {}", jar_str));
+                log(app, &format!("Java command: {}", java_cmd));
 
                 let mut child = Command::new(&java_cmd)
                     .args([
@@ -89,7 +114,7 @@ pub fn run() {
                         }
 
                         let pid = child.id();
-                        println!("[Backend] Java process spawned, PID: {:?}", pid);
+                        log(app, &format!("Java process spawned, PID: {:?}", pid));
 
                         if let Some(state) = app.try_state::<BackendProcess>() {
                             *state.0.lock().unwrap() = Some(child);
@@ -119,31 +144,29 @@ pub fn run() {
                         });
                     }
                     Err(e) => {
-                        eprintln!("[Backend] ❌ Failed to spawn Java process: {}", e);
+                        log(app, &format!("Failed to spawn Java process: {}", e));
                         if let Some(status) = app.try_state::<BackendStatus>() {
                             *status.0.lock().unwrap() = format!("spawn_error: {}", e);
                         }
                     }
                 }
             } else {
-                eprintln!("[Backend] ❌ Backend JAR not found!");
-                eprintln!("[Backend]    Resource dir: {:?}", resource_dir);
-                eprintln!("[Backend]    Expected: backend/novel-studio-backend.jar");
+                log(app, "Backend JAR not found!");
 
                 // List what's actually in the resource dir
                 if let Ok(entries) = std::fs::read_dir(&resource_dir) {
-                    eprintln!("[Backend]    Resource dir contents:");
+                    log(app, "Resource dir contents:");
                     for entry in entries.flatten() {
-                        eprintln!("[Backend]      - {:?}", entry.path());
+                        log(app, &format!("  - {:?}", entry.path()));
                     }
                 }
                 if let Ok(entries) = std::fs::read_dir(resource_dir.join("backend")) {
-                    eprintln!("[Backend]    backend/ contents:");
+                    log(app, "backend/ contents:");
                     for entry in entries.flatten() {
-                        eprintln!("[Backend]      - {:?}", entry.path());
+                        log(app, &format!("  - {:?}", entry.path()));
                     }
                 } else {
-                    eprintln!("[Backend]    backend/ directory does not exist!");
+                    log(app, "backend/ directory does not exist!");
                 }
 
                 if let Some(status) = app.try_state::<BackendStatus>() {
