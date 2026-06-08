@@ -31,6 +31,10 @@ export const novelApi = {
     request<void>(`/novels/${id}/lock`, { method: "POST" }),
   unlock: (id: string) =>
     request<void>(`/novels/${id}/unlock`, { method: "POST" }),
+  delete: (id: string) =>
+    request<void>(`/novels/${id}`, { method: "DELETE" }),
+  recalculateWords: (id: string) =>
+    request<Novel>(`/novels/${id}/recalculate-words`, { method: "POST" }),
 };
 
 // Chapter API
@@ -91,6 +95,8 @@ export const entityApi = {
     request<void>(`/entities/${entityId}/facts/${factId}`, {
       method: "DELETE",
     }),
+  getFacts: (entityId: string) =>
+    request<ImmutableFact[]>(`/entities/${entityId}/facts`),
 };
 
 // Idea API
