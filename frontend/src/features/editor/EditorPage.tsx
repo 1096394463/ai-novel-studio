@@ -60,6 +60,7 @@ export function EditorPage() {
   );
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [showSaving, setShowSaving] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
   const [versions, setVersions] = useState<ChapterVersion[]>([]);
   const [showNewChapter, setShowNewChapter] = useState(false);
@@ -91,11 +92,15 @@ export function EditorPage() {
     async (content: { contentJson: string; contentText: string }) => {
       if (!selectedChapterId) return;
       setIsSaving(true);
+      // Only show "saving" indicator if save takes > 500ms
+      const timer = setTimeout(() => setShowSaving(true), 500);
       try {
         await saveChapter(selectedChapterId, content);
         setLastSaved(new Date());
       } finally {
+        clearTimeout(timer);
         setIsSaving(false);
+        setShowSaving(false);
       }
     },
     [selectedChapterId, saveChapter]
@@ -364,7 +369,7 @@ export function EditorPage() {
     }
   };
 
-  const wordCount = currentChapter?.wordCount || 0;
+  const wordCount = editor?.storage?.characterCount?.characters?.() ?? currentChapter?.wordCount ?? 0;
   const lockedWords = currentChapter?.lockedUntilOffset || 0;
 
   return (
@@ -602,7 +607,7 @@ export function EditorPage() {
 
           {/* Save Status */}
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {isSaving ? (
+            {showSaving ? (
               <>
                 <Save className="w-4 h-4 animate-spin" />
                 <span>保存中...</span>
