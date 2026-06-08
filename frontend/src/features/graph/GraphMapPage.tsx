@@ -262,7 +262,7 @@ export function GraphMapPage() {
         label: newNodeLabel.trim(),
         x: Math.random() * 500,
         y: Math.random() * 300,
-        styleJson: { color: nodeTypeColors[newNodeType] },
+        styleJson: JSON.stringify({ color: nodeTypeColors[newNodeType] }),
       });
 
       setNodes((nds) => [
@@ -320,7 +320,7 @@ export function GraphMapPage() {
         label: newEdgeType,
         description: "",
         evidenceChapterIds: [],
-        styleJson: {},
+        styleJson: JSON.stringify({}),
       });
 
       setEdges((eds) => [
