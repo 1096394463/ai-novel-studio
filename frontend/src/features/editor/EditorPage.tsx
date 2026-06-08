@@ -58,6 +58,7 @@ export function EditorPage() {
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(
     null
   );
+  const [isContentReady, setIsContentReady] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showSaving, setShowSaving] = useState(false);
@@ -79,6 +80,7 @@ export function EditorPage() {
       fetchNovel(novelId);
       fetchChapters(novelId);
       setSelectedChapterId(null); // Reset when switching novels
+      setIsContentReady(false);
     }
   }, [novelId, fetchNovel, fetchChapters]);
 
@@ -132,6 +134,7 @@ export function EditorPage() {
       ? JSON.parse(currentChapter.contentJson)
       : "",
     onUpdate: ({ editor }) => {
+      if (!isContentReady) return; // Don't save during content sync
       // Track selected text
       const { from, to } = editor.state.selection;
       const text = editor.state.doc.textBetween(from, to, "");
@@ -157,10 +160,27 @@ export function EditorPage() {
     },
   });
 
+  // Sync editor content when chapter changes
+  useEffect(() => {
+    if (editor && currentChapter) {
+      setIsContentReady(false);
+      try {
+        const content = currentChapter.contentJson
+          ? JSON.parse(currentChapter.contentJson)
+          : "";
+        editor.commands.setContent(content);
+      } catch {
+        editor.commands.setContent("");
+      }
+      // Small delay to prevent auto-save from firing during content sync
+      setTimeout(() => setIsContentReady(true), 300);
+    }
+  }, [editor, currentChapter?.id]);
+
   // Force save every 10 seconds
   useEffect(() => {
     forceSaveIntervalRef.current = setInterval(() => {
-      if (editor && editor.isFocused) {
+      if (editor && editor.isFocused && isContentReady) {
         const json = editor.getJSON();
         const text = editor.getText();
         handleSave({
@@ -220,7 +240,7 @@ export function EditorPage() {
   const handleDeleteChapter = async (chapterId: string) => {
     if (!confirm("确定删除此章节？")) return;
     try {
-      await chapterApi.delete?.(chapterId);
+      await chapterApi.delete(chapterId);
       if (selectedChapterId === chapterId) {
         const remaining = chapters.filter((c) => c.id !== chapterId);
         if (remaining.length > 0) {
@@ -231,8 +251,8 @@ export function EditorPage() {
         }
       }
       fetchChapters(novelId!);
-    } catch (error) {
-      console.error("Failed to delete chapter:", error);
+    } catch (error: any) {
+      alert(error.message || "删除章节失败");
     }
   };
 
