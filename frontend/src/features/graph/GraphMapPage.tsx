@@ -287,6 +287,7 @@ export function GraphMapPage() {
   };
 
   const handleDeleteNode = async (nodeId: string) => {
+    if (!nodeId) return;
     try {
       await graphApi.deleteNode(nodeId);
       setNodes((nds) => nds.filter((n) => n.id !== nodeId));
@@ -294,7 +295,7 @@ export function GraphMapPage() {
         eds.filter((e) => e.source !== nodeId && e.target !== nodeId)
       );
       setSelectedNode(null);
-    } catch (error) {
+    } catch (error: any) {
       setError(error.message || "删除节点失败");
     }
   };
