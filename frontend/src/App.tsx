@@ -1,3 +1,4 @@
+import { useState, useCallback } from "react";
 import { Routes, Route } from "react-router-dom";
 import { NovelLibraryPage } from "./features/novels/NovelLibraryPage";
 import { EditorPage } from "./features/editor/EditorPage";
@@ -6,8 +7,19 @@ import { GraphMapPage } from "./features/graph/GraphMapPage";
 import { PublishingPage } from "./features/publishing/PublishingPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { Layout } from "./components/Layout";
+import { BootScreen } from "./components/BootScreen";
 
 function App() {
+  const [booted, setBooted] = useState(false);
+
+  const handleReady = useCallback(() => {
+    setBooted(true);
+  }, []);
+
+  if (!booted) {
+    return <BootScreen onReady={handleReady} />;
+  }
+
   return (
     <Routes>
       <Route path="/" element={<Layout />}>
