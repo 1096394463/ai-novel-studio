@@ -10,11 +10,9 @@ struct BackendProcess(Mutex<Option<Child>>);
 struct BackendStatus(Mutex<String>); // "starting" | "jar_not_found" | "ready" | "failed"
 struct StartupLog(Mutex<Vec<String>>);
 
-fn log(app: &tauri::AppHandle, msg: &str) {
+fn log(log_state: &Mutex<Vec<String>>, msg: &str) {
     println!("{}", msg);
-    if let Some(state) = app.try_state::<StartupLog>() {
-        state.0.lock().unwrap().push(msg.to_string());
-    }
+    log_state.lock().unwrap().push(msg.to_string());
 }
 
 #[tauri::command]
@@ -40,6 +38,9 @@ pub fn run() {
                 .resource_dir()
                 .expect("failed to get resource dir");
 
+            let startup_log = app.state::<StartupLog>();
+            let slog = &startup_log.0;
+
             // Determine app data directory for DB and logs
             let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| resource_dir.clone());
             std::fs::create_dir_all(&app_data_dir).ok();
@@ -48,14 +49,13 @@ pub fn run() {
             println!("[Backend] Resource dir: {:?}", resource_dir);
             println!("[Backend] App data dir: {:?}", app_data_dir);
 
-            // Log to startup log for frontend
-            log(app, &format!("Resource dir: {:?}", resource_dir));
-            log(app, &format!("App data dir: {:?}", app_data_dir));
+            log(slog, &format!("Resource dir: {:?}", resource_dir));
+            log(slog, &format!("App data dir: {:?}", app_data_dir));
 
             // List resource dir contents
             if let Ok(entries) = std::fs::read_dir(&resource_dir) {
                 for entry in entries.flatten() {
-                    log(app, &format!("  - {:?}", entry.path()));
+                    log(slog, &format!("  - {:?}", entry.path()));
                 }
             }
 
@@ -67,8 +67,8 @@ pub fn run() {
                 let java_cmd = find_java(&resource_dir);
                 let jar_str = jar.to_string_lossy().to_string();
 
-                log(app, &format!("JAR found: {}", jar_str));
-                log(app, &format!("Java command: {}", java_cmd));
+                log(slog, &format!("JAR found: {}", jar_str));
+                log(slog, &format!("Java command: {}", java_cmd));
 
                 let mut child = Command::new(&java_cmd)
                     .args([
@@ -87,40 +87,31 @@ pub fn run() {
 
                 match child {
                     Ok(mut child) => {
-                        // Capture stdout in a separate thread
                         if let Some(stdout) = child.stdout.take() {
                             thread::spawn(move || {
                                 let reader = BufReader::new(stdout);
                                 for line in reader.lines() {
-                                    match line {
-                                        Ok(l) => println!("[Java:stdout] {}", l),
-                                        Err(e) => eprintln!("[Java:stdout-err] {}", e),
-                                    }
+                                    if let Ok(l) = line { println!("[Java:stdout] {}", l); }
                                 }
                             });
                         }
 
-                        // Capture stderr in a separate thread
                         if let Some(stderr) = child.stderr.take() {
                             thread::spawn(move || {
                                 let reader = BufReader::new(stderr);
                                 for line in reader.lines() {
-                                    match line {
-                                        Ok(l) => eprintln!("[Java:stderr] {}", l),
-                                        Err(e) => eprintln!("[Java:stderr-err] {}", e),
-                                    }
+                                    if let Ok(l) = line { eprintln!("[Java:stderr] {}", l); }
                                 }
                             });
                         }
 
                         let pid = child.id();
-                        log(app, &format!("Java process spawned, PID: {:?}", pid));
+                        log(slog, &format!("Java process spawned, PID: {:?}", pid));
 
                         if let Some(state) = app.try_state::<BackendProcess>() {
                             *state.0.lock().unwrap() = Some(child);
                         }
 
-                        // Health check in background
                         let status_handle = app.state::<BackendStatus>();
                         thread::spawn(move || {
                             println!("[Backend] Waiting for backend to become ready...");
@@ -134,39 +125,38 @@ pub fn run() {
                                     }
                                     Err(e) => {
                                         if i % 10 == 0 {
-                                            println!("[Backend] ⏳ Backend not ready yet (attempt {}/60): {}", i, e);
+                                            println!("[Backend] ⏳ Not ready ({}/60): {}", i, e);
                                         }
                                     }
                                 }
                             }
-                            eprintln!("[Backend] ❌ Backend did not become ready within 60 seconds!");
+                            eprintln!("[Backend] ❌ Backend did not start within 60s!");
                             *status_handle.0.lock().unwrap() = "failed".to_string();
                         });
                     }
                     Err(e) => {
-                        log(app, &format!("Failed to spawn Java process: {}", e));
+                        log(slog, &format!("Failed to spawn Java process: {}", e));
                         if let Some(status) = app.try_state::<BackendStatus>() {
                             *status.0.lock().unwrap() = format!("spawn_error: {}", e);
                         }
                     }
                 }
             } else {
-                log(app, "Backend JAR not found!");
+                log(slog, "Backend JAR not found!");
 
-                // List what's actually in the resource dir
                 if let Ok(entries) = std::fs::read_dir(&resource_dir) {
-                    log(app, "Resource dir contents:");
+                    log(slog, "Resource dir contents:");
                     for entry in entries.flatten() {
-                        log(app, &format!("  - {:?}", entry.path()));
+                        log(slog, &format!("  - {:?}", entry.path()));
                     }
                 }
                 if let Ok(entries) = std::fs::read_dir(resource_dir.join("backend")) {
-                    log(app, "backend/ contents:");
+                    log(slog, "backend/ contents:");
                     for entry in entries.flatten() {
-                        log(app, &format!("  - {:?}", entry.path()));
+                        log(slog, &format!("  - {:?}", entry.path()));
                     }
                 } else {
-                    log(app, "backend/ directory does not exist!");
+                    log(slog, "backend/ directory does not exist!");
                 }
 
                 if let Some(status) = app.try_state::<BackendStatus>() {
