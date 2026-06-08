@@ -39,6 +39,7 @@ export function WorldBiblePage() {
   const [selectedType, setSelectedType] = useState<EntityType>("character");
   const [isCreating, setIsCreating] = useState(false);
   const [newEntityName, setNewEntityName] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (novelId) {
@@ -49,6 +50,7 @@ export function WorldBiblePage() {
 
   const handleCreateEntity = async () => {
     if (!novelId || !newEntityName.trim()) return;
+    setError(null);
     try {
       await createEntity(novelId, {
         type: selectedType,
@@ -60,19 +62,32 @@ export function WorldBiblePage() {
       });
       setNewEntityName("");
       setIsCreating(false);
-    } catch (error) {
-      console.error("Failed to create entity:", error);
+    } catch (error: any) {
+      setError(error.message || "创建失败");
     }
   };
 
   const handleToggleLock = async (entity: WorldEntity) => {
-    await updateEntity(entity.id, { locked: !entity.locked });
+    setError(null);
+    try {
+      await updateEntity(entity.id, { locked: !entity.locked });
+    } catch (error: any) {
+      setError(error.message || "更新失败");
+    }
   };
 
   const selectedTypeInfo = entityTypes.find((t) => t.type === selectedType);
 
   return (
     <div className="flex h-full">
+      {/* Error Toast */}
+      {error && (
+        <div className="fixed top-4 right-4 z-50 bg-destructive text-destructive-foreground px-4 py-2 rounded-md shadow-lg flex items-center gap-2">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="hover:opacity-80">✕</button>
+        </div>
+      )}
+
       {/* Entity Type Navigation */}
       <aside className="w-48 border-r bg-card overflow-y-auto">
         <div className="p-4">
