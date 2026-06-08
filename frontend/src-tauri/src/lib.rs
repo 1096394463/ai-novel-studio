@@ -177,11 +177,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    // Health check: poll /api/health until backend is ready
+    // Health check: poll TCP port 18080 until backend is ready
     {
         let app_handle = app.handle().clone();
         thread::spawn(move || {
-            let client = reqwest::blocking::Client::new();
             let mut attempts = 0;
             let max_attempts = 90; // 3 minutes
             while attempts < max_attempts {
@@ -195,23 +194,12 @@ pub fn run() {
                         match child.try_wait() {
                             Ok(Some(status)) => {
                                 println!("[Health] Java process exited: {}", status);
-                                // Read stderr log for error details
                                 if let Some(s) = app_handle.try_state::<BackendStatus>() {
                                     *s.0.lock().unwrap() = format!("exited: {}", status);
                                 }
                                 if let Some(log_state) = app_handle.try_state::<StartupLog>() {
                                     let mut logs = log_state.0.lock().unwrap();
                                     logs.push(format!("❌ Java process exited: {}", status));
-                                    // Try to read java-stderr.log
-                                    let err_log = app_handle.path().app_data_dir()
-                                        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-                                        .join("java-stderr.log");
-                                    if let Ok(content) = std::fs::read_to_string(&err_log) {
-                                        logs.push("--- stderr log ---".to_string());
-                                        for line in content.lines().take(20) {
-                                            logs.push(format!("  {}", line));
-                                        }
-                                    }
                                 }
                                 break;
                             }
@@ -221,15 +209,19 @@ pub fn run() {
                     }
                 }
 
-                match client.get("http://localhost:18080/api/health").send() {
-                    Ok(resp) if resp.status().is_success() => {
-                        println!("[Health] Backend is ready!");
+                // Try TCP connect to port 18080
+                match std::net::TcpStream::connect_timeout(
+                    &"127.0.0.1:18080".parse().unwrap(),
+                    std::time::Duration::from_secs(1),
+                ) {
+                    Ok(_) => {
+                        println!("[Health] Backend port 18080 is open!");
                         if let Some(s) = app_handle.try_state::<BackendStatus>() {
                             *s.0.lock().unwrap() = "ready".to_string();
                         }
                         break;
                     }
-                    _ => {
+                    Err(_) => {
                         if attempts % 5 == 0 {
                             println!("[Health] Waiting... attempt {}/{}", attempts, max_attempts);
                         }
