@@ -45,7 +45,7 @@ public interface WorldEntityRepository {
     List<ImmutableFact> findFactsByEntityId(String entityId);
 
     @Insert("INSERT INTO immutable_facts (id, entity_id, fact, source_chapter_id, importance) " +
-            "VALUES (#{id}, #{entityId}, #{fact}, #{sourceChId}, #{importance})")
+            "VALUES (#{id}, #{entityId}, #{fact}, #{sourceChapterId}, #{importance})")
     int insertFact(ImmutableFact fact);
 
     @Delete("DELETE FROM immutable_facts WHERE id = #{id}")
