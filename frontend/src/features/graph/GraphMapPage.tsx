@@ -145,6 +145,9 @@ export function GraphMapPage() {
   const [newEdgeTarget, setNewEdgeTarget] = useState("");
   const [newEdgeType, setNewEdgeType] = useState(relationTypes[0]);
   const [error, setError] = useState<string | null>(null);
+  const [showNewMap, setShowNewMap] = useState(false);
+  const [newMapTitle, setNewMapTitle] = useState("");
+  const [newMapType, setNewMapType] = useState("world");
 
   useEffect(() => {
     if (novelId) {
@@ -361,6 +364,18 @@ export function GraphMapPage() {
 
   const handleNodeDragStop = async (_: React.MouseEvent, node: Node) => {
     await handleUpdateNodePosition(node.id, node.position);
+  };
+
+  const handleCreateMap = async () => {
+    if (!novelId || !newMapTitle.trim()) return;
+    try {
+      const m = await mapApi.create(novelId, { title: newMapTitle.trim(), mapType: newMapType });
+      setMaps([...maps, m]);
+      setNewMapTitle("");
+      setShowNewMap(false);
+    } catch (error: any) {
+      setError(error.message || "创建地图失败");
+    }
   };
 
   // Node type options for dropdown
@@ -606,10 +621,38 @@ export function GraphMapPage() {
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-medium">地图列表</h3>
-                  <button className="p-1 rounded hover:bg-accent">
+                  <button onClick={() => setShowNewMap(true)} className="p-1 rounded hover:bg-accent">
                     <Plus className="w-4 h-4" />
                   </button>
                 </div>
+
+                {showNewMap && (
+                  <div className="p-3 border rounded-md mb-3">
+                    <input
+                      type="text"
+                      value={newMapTitle}
+                      onChange={(e) => setNewMapTitle(e.target.value)}
+                      placeholder="地图名称"
+                      className="w-full px-2 py-1 text-sm border rounded mb-2"
+                      onKeyDown={(e) => { if (e.key === "Enter") handleCreateMap(); if (e.key === "Escape") setShowNewMap(false); }}
+                    />
+                    <select
+                      value={newMapType}
+                      onChange={(e) => setNewMapType(e.target.value)}
+                      className="w-full px-2 py-1 text-sm border rounded mb-2"
+                    >
+                      <option value="world">世界地图</option>
+                      <option value="city">城市地图</option>
+                      <option value="route">路线图</option>
+                      <option value="battle">战场图</option>
+                    </select>
+                    <div className="flex gap-2">
+                      <button onClick={handleCreateMap} className="flex-1 px-2 py-1 text-xs bg-primary text-primary-foreground rounded">创建</button>
+                      <button onClick={() => setShowNewMap(false)} className="flex-1 px-2 py-1 text-xs border rounded">取消</button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-1">
                   {maps.map((map) => (
                     <button

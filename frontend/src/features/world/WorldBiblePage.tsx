@@ -52,6 +52,7 @@ export function WorldBiblePage() {
   const [addingFact, setAddingFact] = useState(false);
   const [newFactContent, setNewFactContent] = useState("");
   const [facts, setFacts] = useState<any[]>([]);
+  const [selectedIdea, setSelectedIdea] = useState<any | null>(null);
 
   useEffect(() => {
     if (novelId) {
@@ -527,6 +528,7 @@ export function WorldBiblePage() {
             {ideas.slice(0, 5).map((idea) => (
               <div
                 key={idea.id}
+                onClick={() => alert(`${idea.title}\n\n${idea.content}`)}
                 className="p-2 border rounded-md text-sm hover:bg-accent/50 cursor-pointer"
               >
                 <p className="font-medium truncate">{idea.title}</p>
