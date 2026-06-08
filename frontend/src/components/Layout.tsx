@@ -7,17 +7,31 @@ import {
   Send,
   Settings,
 } from "lucide-react";
-
-const navigation = [
-  { name: "书架", href: "/", icon: BookOpen },
-  { name: "写作", href: "/editor", icon: PenTool },
-  { name: "设定", href: "/world", icon: Globe },
-  { name: "图谱", href: "/graph", icon: GitBranch },
-  { name: "发布", href: "/publishing", icon: Send },
-];
+import { useNovelStore } from "@/stores";
 
 export function Layout() {
   const location = useLocation();
+  const currentNovelId = useNovelStore((s) => s.currentNovelId);
+
+  const navItems = [
+    { name: "书架", href: "/", icon: BookOpen },
+    {
+      name: "写作",
+      href: currentNovelId ? `/editor/${currentNovelId}` : "/editor",
+      icon: PenTool,
+    },
+    {
+      name: "设定",
+      href: currentNovelId ? `/world/${currentNovelId}` : "/world",
+      icon: Globe,
+    },
+    {
+      name: "图谱",
+      href: currentNovelId ? `/graph/${currentNovelId}` : "/graph",
+      icon: GitBranch,
+    },
+    { name: "发布", href: "/publishing", icon: Send },
+  ];
 
   return (
     <div className="flex h-screen bg-background">
@@ -27,10 +41,11 @@ export function Layout() {
           <BookOpen className="w-8 h-8 text-primary" />
         </div>
         <nav className="flex-1 flex flex-col items-center gap-4">
-          {navigation.map((item) => {
+          {navItems.map((item) => {
+            const baseHref = item.href.split("/").slice(0, 2).join("/") || "/";
             const isActive =
               location.pathname === item.href ||
-              location.pathname.startsWith(item.href + "/");
+              location.pathname.startsWith(baseHref + "/");
             return (
               <Link
                 key={item.name}
