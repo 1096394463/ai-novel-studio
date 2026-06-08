@@ -29,13 +29,33 @@ public interface GraphRepository {
     // Edges
     @Select("SELECT * FROM graph_edges WHERE novel_id = #{novelId}")
     @Results({
-        @Result(property = "evidenceChapterIds", column = "evidence_chapter_ids", typeHandler = com.ainovelstudio.novelstudio.config.JsonStringListTypeHandler.class)
+        @Result(property = "id", column = "id"),
+        @Result(property = "novelId", column = "novel_id"),
+        @Result(property = "sourceNodeId", column = "source_node_id"),
+        @Result(property = "targetNodeId", column = "target_node_id"),
+        @Result(property = "relationType", column = "relation_type"),
+        @Result(property = "label", column = "label"),
+        @Result(property = "description", column = "description"),
+        @Result(property = "evidenceChapterIds", column = "evidence_chapter_ids", typeHandler = com.ainovelstudio.novelstudio.config.JsonStringListTypeHandler.class),
+        @Result(property = "styleJson", column = "style_json"),
+        @Result(property = "createdAt", column = "created_at"),
+        @Result(property = "updatedAt", column = "updated_at")
     })
     List<GraphEdge> findEdgesByNovelId(String novelId);
 
     @Select("SELECT * FROM graph_edges WHERE id = #{id}")
     @Results({
-        @Result(property = "evidenceChapterIds", column = "evidence_chapter_ids", typeHandler = com.ainovelstudio.novelstudio.config.JsonStringListTypeHandler.class)
+        @Result(property = "id", column = "id"),
+        @Result(property = "novelId", column = "novel_id"),
+        @Result(property = "sourceNodeId", column = "source_node_id"),
+        @Result(property = "targetNodeId", column = "target_node_id"),
+        @Result(property = "relationType", column = "relation_type"),
+        @Result(property = "label", column = "label"),
+        @Result(property = "description", column = "description"),
+        @Result(property = "evidenceChapterIds", column = "evidence_chapter_ids", typeHandler = com.ainovelstudio.novelstudio.config.JsonStringListTypeHandler.class),
+        @Result(property = "styleJson", column = "style_json"),
+        @Result(property = "createdAt", column = "created_at"),
+        @Result(property = "updatedAt", column = "updated_at")
     })
     GraphEdge findEdgeById(String id);
 
