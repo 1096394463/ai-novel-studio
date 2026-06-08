@@ -7,11 +7,19 @@ use std::thread;
 use tauri::Manager;
 
 struct BackendProcess(Mutex<Option<Child>>);
+struct BackendStatus(Mutex<String>); // "starting" | "jar_not_found" | "ready" | "failed"
+
+#[tauri::command]
+fn get_backend_status(status: tauri::State<BackendStatus>) -> String {
+    status.0.lock().unwrap().clone()
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .manage(BackendProcess(Mutex::new(None)))
+        .manage(BackendStatus(Mutex::new("starting".to_string())))
+        .invoke_handler(tauri::generate_handler![get_backend_status])
         .setup(|app| {
             let resource_dir = app
                 .path()
@@ -50,68 +58,78 @@ pub fn run() {
                     .current_dir(&app_data_dir)
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
-                    .spawn()
-                    .expect("Failed to spawn Java backend");
+                    .spawn();
 
-                // Capture stdout in a separate thread
-                if let Some(stdout) = child.stdout.take() {
-                    thread::spawn(move || {
-                        let reader = BufReader::new(stdout);
-                        for line in reader.lines() {
-                            match line {
-                                Ok(l) => println!("[Java:stdout] {}", l),
-                                Err(e) => eprintln!("[Java:stdout-err] {}", e),
-                            }
+                match child {
+                    Ok(mut child) => {
+                        // Capture stdout in a separate thread
+                        if let Some(stdout) = child.stdout.take() {
+                            thread::spawn(move || {
+                                let reader = BufReader::new(stdout);
+                                for line in reader.lines() {
+                                    match line {
+                                        Ok(l) => println!("[Java:stdout] {}", l),
+                                        Err(e) => eprintln!("[Java:stdout-err] {}", e),
+                                    }
+                                }
+                            });
                         }
-                    });
-                }
 
-                // Capture stderr in a separate thread
-                if let Some(stderr) = child.stderr.take() {
-                    thread::spawn(move || {
-                        let reader = BufReader::new(stderr);
-                        for line in reader.lines() {
-                            match line {
-                                Ok(l) => eprintln!("[Java:stderr] {}", l),
-                                Err(e) => eprintln!("[Java:stderr-err] {}", e),
-                            }
+                        // Capture stderr in a separate thread
+                        if let Some(stderr) = child.stderr.take() {
+                            thread::spawn(move || {
+                                let reader = BufReader::new(stderr);
+                                for line in reader.lines() {
+                                    match line {
+                                        Ok(l) => eprintln!("[Java:stderr] {}", l),
+                                        Err(e) => eprintln!("[Java:stderr-err] {}", e),
+                                    }
+                                }
+                            });
                         }
-                    });
-                }
 
-                let pid = child.id();
-                println!("[Backend] Java process spawned, PID: {:?}", pid);
+                        let pid = child.id();
+                        println!("[Backend] Java process spawned, PID: {:?}", pid);
 
-                if let Some(state) = app.try_state::<BackendProcess>() {
-                    *state.0.lock().unwrap() = Some(child);
-                }
+                        if let Some(state) = app.try_state::<BackendProcess>() {
+                            *state.0.lock().unwrap() = Some(child);
+                        }
 
-                // Health check in background
-                let data_dir_for_check = app_data_dir.clone();
-                thread::spawn(move || {
-                    println!("[Backend] Waiting for backend to become ready...");
-                    for i in 1..=30 {
-                        std::thread::sleep(std::time::Duration::from_secs(1));
-                        match std::net::TcpStream::connect("127.0.0.1:18080") {
-                            Ok(_) => {
-                                println!("[Backend] ✅ Backend is ready (attempt {}/30)", i);
-                                println!("[Backend] Data dir: {:?}", data_dir_for_check);
-                                return;
-                            }
-                            Err(e) => {
-                                if i % 5 == 0 {
-                                    println!("[Backend] ⏳ Backend not ready yet (attempt {}/30): {}", i, e);
+                        // Health check in background
+                        let status_handle = app.state::<BackendStatus>();
+                        thread::spawn(move || {
+                            println!("[Backend] Waiting for backend to become ready...");
+                            for i in 1..=60 {
+                                std::thread::sleep(std::time::Duration::from_secs(1));
+                                match std::net::TcpStream::connect("127.0.0.1:18080") {
+                                    Ok(_) => {
+                                        println!("[Backend] ✅ Backend is ready (attempt {}/60)", i);
+                                        *status_handle.0.lock().unwrap() = "ready".to_string();
+                                        return;
+                                    }
+                                    Err(e) => {
+                                        if i % 10 == 0 {
+                                            println!("[Backend] ⏳ Backend not ready yet (attempt {}/60): {}", i, e);
+                                        }
+                                    }
                                 }
                             }
+                            eprintln!("[Backend] ❌ Backend did not become ready within 60 seconds!");
+                            *status_handle.0.lock().unwrap() = "failed".to_string();
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("[Backend] ❌ Failed to spawn Java process: {}", e);
+                        if let Some(status) = app.try_state::<BackendStatus>() {
+                            *status.0.lock().unwrap() = format!("spawn_error: {}", e);
                         }
                     }
-                    eprintln!("[Backend] ❌ Backend did not become ready within 30 seconds!");
-                });
+                }
             } else {
                 eprintln!("[Backend] ❌ Backend JAR not found!");
                 eprintln!("[Backend]    Resource dir: {:?}", resource_dir);
                 eprintln!("[Backend]    Expected: backend/novel-studio-backend.jar");
-                eprintln!("[Backend]    Searched dev paths: ../backend/target/novel-studio-backend-0.1.0.jar");
+
                 // List what's actually in the resource dir
                 if let Ok(entries) = std::fs::read_dir(&resource_dir) {
                     eprintln!("[Backend]    Resource dir contents:");
@@ -127,11 +145,14 @@ pub fn run() {
                 } else {
                     eprintln!("[Backend]    backend/ directory does not exist!");
                 }
+
+                if let Some(status) = app.try_state::<BackendStatus>() {
+                    *status.0.lock().unwrap() = "jar_not_found".to_string();
+                }
             }
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
@@ -149,7 +170,6 @@ pub fn run() {
 
 /// Find bundled JRE java binary, fallback to system "java"
 fn find_java(resource_dir: &std::path::Path) -> String {
-    // Check bundled JRE in resource directory
     #[cfg(target_os = "windows")]
     let jre_bin = resource_dir.join("backend").join("jre").join("bin").join("java.exe");
 
@@ -157,11 +177,10 @@ fn find_java(resource_dir: &std::path::Path) -> String {
     let jre_bin = resource_dir.join("backend").join("jre").join("bin").join("java");
 
     if jre_bin.exists() {
-        println!("Using bundled JRE: {:?}", jre_bin);
+        println!("[Backend] Using bundled JRE: {:?}", jre_bin);
         return jre_bin.to_string_lossy().to_string();
     }
 
-    // Also check relative to exe (for dev mode)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
             #[cfg(target_os = "windows")]
@@ -171,13 +190,13 @@ fn find_java(resource_dir: &std::path::Path) -> String {
             let dev_jre = exe_dir.join("..").join("backend").join("jre").join("bin").join("java");
 
             if dev_jre.exists() {
-                println!("Using dev JRE: {:?}", dev_jre);
+                println!("[Backend] Using dev JRE: {:?}", dev_jre);
                 return dev_jre.to_string_lossy().to_string();
             }
         }
     }
 
-    println!("No bundled JRE found, using system java");
+    println!("[Backend] No bundled JRE found, using system java");
     "java".to_string()
 }
 
@@ -188,7 +207,6 @@ fn find_file(resource_dir: &std::path::Path, exact: &str, _pattern: &str) -> Opt
         return Some(path);
     }
 
-    // Try dev mode paths
     let dev_paths = vec![
         std::path::PathBuf::from("../backend/target/novel-studio-backend-0.1.0.jar"),
         std::path::PathBuf::from("backend/target/novel-studio-backend-0.1.0.jar"),
