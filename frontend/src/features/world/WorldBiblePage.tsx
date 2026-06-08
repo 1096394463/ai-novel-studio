@@ -155,7 +155,7 @@ export function WorldBiblePage() {
   const handleAddFact = async () => {
     if (!currentEntity || !newFactContent.trim()) return;
     try {
-      await entityApi.addFact(currentEntity.id, { content: newFactContent.trim() });
+      await entityApi.addFact(currentEntity.id, { fact: newFactContent.trim() });
       setNewFactContent("");
       setAddingFact(false);
       // Refresh facts
