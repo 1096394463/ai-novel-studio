@@ -2,6 +2,7 @@ package com.ainovelstudio.novelstudio.controller;
 
 import com.ainovelstudio.novelstudio.model.Novel;
 import com.ainovelstudio.novelstudio.service.NovelService;
+import com.ainovelstudio.novelstudio.service.ChapterService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
@@ -11,9 +12,11 @@ import java.util.List;
 public class NovelController {
 
     private final NovelService novelService;
+    private final ChapterService chapterService;
 
-    public NovelController(NovelService novelService) {
+    public NovelController(NovelService novelService, ChapterService chapterService) {
         this.novelService = novelService;
+        this.chapterService = chapterService;
     }
 
     @GetMapping
@@ -54,5 +57,23 @@ public class NovelController {
     public ResponseEntity<Void> unlock(@PathVariable String id) {
         novelService.unlock(id);
         return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
+        novelService.delete(id);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{id}/recalculate-words")
+    public ResponseEntity<Novel> recalculateWords(@PathVariable String id) {
+        int totalWords = chapterService.findByNovelId(id).stream()
+                .mapToInt(c -> c.getWordCount() != null ? c.getWordCount() : 0)
+                .sum();
+        Novel novel = novelService.findById(id);
+        if (novel == null) return ResponseEntity.notFound().build();
+        novel.setTotalWords(totalWords);
+        novelService.update(id, novel);
+        return ResponseEntity.ok(novel);
     }
 }
