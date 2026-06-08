@@ -33,3 +33,10 @@ logging:
   level:
     com.ainovelstudio.novelstudio: DEBUG
     org.sqlite: WARN
+    org.springframework.boot: INFO
+    org.springframework.web: INFO
+  file:
+    name: ${DATA_DIR:./data}/novel-studio.log
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

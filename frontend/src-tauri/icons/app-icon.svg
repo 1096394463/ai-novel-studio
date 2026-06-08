@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Ink wash gradient for mountains -->
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a1a2e" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#2d2d44" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#4a4a5a" stop-opacity="0.3"/>
+    </linearGradient>
+    <!-- Brush stroke texture -->
+    <filter id="ink-texture">
+      <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="soft-blur">
+      <feGaussianBlur stdDeviation="1.5"/>
+    </filter>
+    <filter id="ink-splash">
+      <feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="3" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="4"/>
+    </filter>
+  </defs>
+
+  <!-- Background - rice paper texture -->
+  <rect width="512" height="512" rx="80" ry="80" fill="#f5f0e8"/>
+  <rect width="512" height="512" rx="80" ry="80" fill="url(#ink)" opacity="0.03"/>
+
+  <!-- Distant mountains - lightest ink wash -->
+  <g filter="url(#soft-blur)" opacity="0.25">
+    <path d="M 40 380 Q 100 250 160 300 Q 200 200 260 280 Q 300 180 360 260 Q 400 200 470 350" 
+          stroke="none" fill="#2d2d44"/>
+  </g>
+
+  <!-- Mid mountains -->
+  <g opacity="0.45">
+    <path d="M 30 400 Q 80 280 140 330 Q 180 240 230 310 Q 270 220 320 290 Q 370 230 420 320 Q 450 270 482 380"
+          stroke="none" fill="#1a1a2e" filter="url(#ink-splash)"/>
+  </g>
+
+  <!-- Near mountain -->
+  <g opacity="0.7">
+    <path d="M 50 420 Q 120 310 180 360 Q 230 280 280 340 Q 340 260 400 330 Q 440 290 480 400 L 482 420 Z"
+          stroke="none" fill="#1a1a2e"/>
+  </g>
+
+  <!-- Brush/pen nib - central element -->
+  <g transform="translate(256, 200) rotate(-15)">
+    <!-- Brush handle -->
+    <rect x="-8" y="-80" width="16" height="120" rx="4" fill="#3d2b1f" opacity="0.85"/>
+    <rect x="-6" y="-75" width="12" height="110" rx="3" fill="#5c3d2e" opacity="0.6"/>
+    <!-- Brush tip -->
+    <path d="M -8 40 Q 0 100 8 40" fill="#1a1a2e"/>
+    <!-- Ink drop from brush -->
+    <circle cx="0" cy="105" r="6" fill="#1a1a2e" opacity="0.8" filter="url(#ink-splash)"/>
+  </g>
+
+  <!-- Chinese character 文 (literature/writing) - stylized -->
+  <g transform="translate(380, 140)" opacity="0.6">
+    <text font-family="serif" font-size="72" fill="#1a1a2e" font-weight="bold">文</text>
+  </g>
+
+  <!-- Ink splatter accents -->
+  <circle cx="100" cy="150" r="4" fill="#1a1a2e" opacity="0.3"/>
+  <circle cx="95" cy="145" r="2" fill="#1a1a2e" opacity="0.2"/>
+  <circle cx="420" cy="380" r="5" fill="#1a1a2e" opacity="0.25"/>
+  <circle cx="430" cy="390" r="2" fill="#1a1a2e" opacity="0.15"/>
+
+  <!-- Red seal stamp (印章) -->
+  <g transform="translate(390, 350)">
+    <rect x="-28" y="-28" width="56" height="56" rx="4" fill="#c0392b" opacity="0.85"/>
+    <text x="0" y="8" font-family="serif" font-size="32" fill="#f5f0e8" text-anchor="middle" font-weight="bold">作</text>
+  </g>
+</svg>
