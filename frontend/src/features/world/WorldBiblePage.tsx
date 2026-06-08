@@ -11,8 +11,11 @@ import {
   Lock,
   Unlock,
   Tag,
+  Trash2,
+  X,
 } from "lucide-react";
 import { useWorldStore, useIdeaStore } from "@/stores";
+import { entityApi } from "@/api";
 import type { EntityType, WorldEntity } from "@/types";
 
 const entityTypes: { type: EntityType; label: string; icon: typeof Users }[] = [
@@ -40,6 +43,15 @@ export function WorldBiblePage() {
   const [isCreating, setIsCreating] = useState(false);
   const [newEntityName, setNewEntityName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [addingAlias, setAddingAlias] = useState(false);
+  const [newAlias, setNewAlias] = useState("");
+  const [addingTag, setAddingTag] = useState(false);
+  const [newTag, setNewTag] = useState("");
+  const [editingDetail, setEditingDetail] = useState(false);
+  const [detailText, setDetailText] = useState("{}");
+  const [addingFact, setAddingFact] = useState(false);
+  const [newFactContent, setNewFactContent] = useState("");
+  const [facts, setFacts] = useState<any[]>([]);
 
   useEffect(() => {
     if (novelId) {
@@ -75,6 +87,102 @@ export function WorldBiblePage() {
       setError(error.message || "更新失败");
     }
   };
+
+  const handleAddAlias = async () => {
+    if (!currentEntity || !newAlias.trim()) return;
+    const aliases = [...(currentEntity.aliases || []), newAlias.trim()];
+    try {
+      await updateEntity(currentEntity.id, { aliases });
+      setNewAlias("");
+      setAddingAlias(false);
+    } catch (error: any) {
+      setError(error.message || "添加别名失败");
+    }
+  };
+
+  const handleRemoveAlias = async (index: number) => {
+    if (!currentEntity) return;
+    const aliases = currentEntity.aliases.filter((_, i) => i !== index);
+    try {
+      await updateEntity(currentEntity.id, { aliases });
+    } catch (error: any) {
+      setError(error.message || "删除别名失败");
+    }
+  };
+
+  const handleAddTag = async () => {
+    if (!currentEntity || !newTag.trim()) return;
+    const tags = [...(currentEntity.tags || []), newTag.trim()];
+    try {
+      await updateEntity(currentEntity.id, { tags });
+      setNewTag("");
+      setAddingTag(false);
+    } catch (error: any) {
+      setError(error.message || "添加标签失败");
+    }
+  };
+
+  const handleRemoveTag = async (index: number) => {
+    if (!currentEntity) return;
+    const tags = currentEntity.tags.filter((_, i) => i !== index);
+    try {
+      await updateEntity(currentEntity.id, { tags });
+    } catch (error: any) {
+      setError(error.message || "删除标签失败");
+    }
+  };
+
+  const handleDeleteEntity = async () => {
+    if (!currentEntity || !confirm("确定要删除这个设定吗？")) return;
+    try {
+      await entityApi.delete(currentEntity.id);
+      if (novelId) fetchEntities(novelId, selectedType);
+    } catch (error: any) {
+      setError(error.message || "删除失败");
+    }
+  };
+
+  const handleSaveDetail = async () => {
+    if (!currentEntity) return;
+    try {
+      await updateEntity(currentEntity.id, { detailJson: detailText });
+      setEditingDetail(false);
+    } catch (error: any) {
+      setError(error.message || "保存详细设定失败");
+    }
+  };
+
+  const handleAddFact = async () => {
+    if (!currentEntity || !newFactContent.trim()) return;
+    try {
+      await entityApi.addFact(currentEntity.id, { content: newFactContent.trim() });
+      setNewFactContent("");
+      setAddingFact(false);
+      // Refresh facts
+      const data = await entityApi.getFacts(currentEntity.id);
+      setFacts(data);
+    } catch (error: any) {
+      setError(error.message || "添加事实失败");
+    }
+  };
+
+  const handleDeleteFact = async (factId: string) => {
+    if (!currentEntity) return;
+    try {
+      await entityApi.deleteFact(currentEntity.id, factId);
+      setFacts(facts.filter(f => f.id !== factId));
+    } catch (error: any) {
+      setError(error.message || "删除事实失败");
+    }
+  };
+
+  // Load facts when entity changes
+  useEffect(() => {
+    if (currentEntity) {
+      entityApi.getFacts(currentEntity.id).then(setFacts).catch(() => setFacts([]));
+      setDetailText(currentEntity.detailJson || "{}");
+    }
+  }, [currentEntity?.id]);
 
   const selectedTypeInfo = entityTypes.find((t) => t.type === selectedType);
 
@@ -197,18 +305,27 @@ export function WorldBiblePage() {
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
               <h1 className="text-2xl font-bold">{currentEntity.name}</h1>
-              <button
-                onClick={() => handleToggleLock(currentEntity)}
-                className={`p-2 rounded hover:bg-accent ${
-                  currentEntity.locked ? "text-destructive" : ""
-                }`}
-              >
-                {currentEntity.locked ? (
-                  <Lock className="w-5 h-5" />
-                ) : (
-                  <Unlock className="w-5 h-5" />
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleToggleLock(currentEntity)}
+                  className={`p-2 rounded hover:bg-accent ${
+                    currentEntity.locked ? "text-destructive" : ""
+                  }`}
+                >
+                  {currentEntity.locked ? (
+                    <Lock className="w-5 h-5" />
+                  ) : (
+                    <Unlock className="w-5 h-5" />
+                  )}
+                </button>
+                <button
+                  onClick={handleDeleteEntity}
+                  className="p-2 rounded hover:bg-accent text-destructive"
+                  title="删除设定"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Aliases */}
@@ -220,14 +337,35 @@ export function WorldBiblePage() {
                 {currentEntity.aliases.map((alias, index) => (
                   <span
                     key={index}
-                    className="px-2 py-1 text-sm bg-secondary rounded"
+                    className="flex items-center gap-1 px-2 py-1 text-sm bg-secondary rounded group"
                   >
                     {alias}
+                    <button
+                      onClick={() => handleRemoveAlias(index)}
+                      className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
                   </span>
                 ))}
-                <button className="px-2 py-1 text-sm border rounded hover:bg-accent">
-                  + 添加
-                </button>
+                {addingAlias ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      value={newAlias}
+                      onChange={(e) => setNewAlias(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAddAlias(); if (e.key === "Escape") setAddingAlias(false); }}
+                      className="px-2 py-1 text-sm border rounded w-24"
+                      autoFocus
+                    />
+                    <button onClick={handleAddAlias} className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded">确定</button>
+                    <button onClick={() => setAddingAlias(false)} className="px-2 py-1 text-xs border rounded">取消</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setAddingAlias(true)} className="px-2 py-1 text-sm border rounded hover:bg-accent">
+                    + 添加
+                  </button>
+                )}
               </div>
             </div>
 
@@ -240,15 +378,36 @@ export function WorldBiblePage() {
                 {currentEntity.tags.map((tag, index) => (
                   <span
                     key={index}
-                    className="flex items-center gap-1 px-2 py-1 text-sm bg-primary/10 text-primary rounded"
+                    className="flex items-center gap-1 px-2 py-1 text-sm bg-primary/10 text-primary rounded group"
                   >
                     <Tag className="w-3 h-3" />
                     {tag}
+                    <button
+                      onClick={() => handleRemoveTag(index)}
+                      className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
                   </span>
                 ))}
-                <button className="px-2 py-1 text-sm border rounded hover:bg-accent">
-                  + 添加
-                </button>
+                {addingTag ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      value={newTag}
+                      onChange={(e) => setNewTag(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAddTag(); if (e.key === "Escape") setAddingTag(false); }}
+                      className="px-2 py-1 text-sm border rounded w-24"
+                      autoFocus
+                    />
+                    <button onClick={handleAddTag} className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded">确定</button>
+                    <button onClick={() => setAddingTag(false)} className="px-2 py-1 text-xs border rounded">取消</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setAddingTag(true)} className="px-2 py-1 text-sm border rounded hover:bg-accent">
+                    + 添加
+                  </button>
+                )}
               </div>
             </div>
 
@@ -270,14 +429,44 @@ export function WorldBiblePage() {
 
             {/* Detail JSON */}
             <div className="mb-6">
-              <label className="text-sm font-medium text-muted-foreground">
-                详细设定
-              </label>
-              <div className="mt-1 p-4 border rounded-md bg-muted/50">
-                <pre className="text-sm whitespace-pre-wrap">
-                  {JSON.stringify(currentEntity.detailJson, null, 2) || "{}"}
-                </pre>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-muted-foreground">
+                  详细设定
+                </label>
+                <button
+                  onClick={() => {
+                    if (editingDetail) {
+                      handleSaveDetail();
+                    } else {
+                      setEditingDetail(true);
+                    }
+                  }}
+                  className="text-sm text-primary hover:underline"
+                >
+                  {editingDetail ? "保存" : "编辑"}
+                </button>
               </div>
+              {editingDetail ? (
+                <textarea
+                  value={detailText}
+                  onChange={(e) => setDetailText(e.target.value)}
+                  className="w-full mt-1 p-3 border rounded-md font-mono text-sm"
+                  rows={8}
+                />
+              ) : (
+                <div className="mt-1 p-4 border rounded-md bg-muted/50">
+                  <pre className="text-sm whitespace-pre-wrap">
+                    {(() => {
+                      try {
+                        const parsed = typeof currentEntity.detailJson === 'string'
+                          ? JSON.parse(currentEntity.detailJson)
+                          : currentEntity.detailJson;
+                        return JSON.stringify(parsed, null, 2);
+                      } catch { return currentEntity.detailJson || "{}"; }
+                    })()}
+                  </pre>
+                </div>
+              )}
             </div>
 
             {/* Immutable Facts */}
@@ -286,15 +475,40 @@ export function WorldBiblePage() {
                 <label className="text-sm font-medium text-muted-foreground">
                   不可改动事实
                 </label>
-                <button className="text-sm text-primary hover:underline">
+                <button
+                  onClick={() => setAddingFact(true)}
+                  className="text-sm text-primary hover:underline"
+                >
                   + 添加事实
                 </button>
               </div>
               <div className="space-y-2">
-                {/* TODO: Fetch and display immutable facts */}
-                <p className="text-sm text-muted-foreground">
-                  暂无不可改动事实
-                </p>
+                {addingFact && (
+                  <div className="flex items-center gap-2 p-2 border rounded-md">
+                    <input
+                      type="text"
+                      value={newFactContent}
+                      onChange={(e) => setNewFactContent(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAddFact(); if (e.key === "Escape") setAddingFact(false); }}
+                      className="flex-1 px-2 py-1 text-sm border rounded"
+                      placeholder="输入事实内容..."
+                      autoFocus
+                    />
+                    <button onClick={handleAddFact} className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded">添加</button>
+                    <button onClick={() => setAddingFact(false)} className="px-2 py-1 text-xs border rounded">取消</button>
+                  </div>
+                )}
+                {facts.map((fact) => (
+                  <div key={fact.id} className="flex items-center justify-between p-2 border rounded-md text-sm">
+                    <span>{fact.content}</span>
+                    <button onClick={() => handleDeleteFact(fact.id)} className="text-destructive hover:underline text-xs">删除</button>
+                  </div>
+                ))}
+                {facts.length === 0 && !addingFact && (
+                  <p className="text-sm text-muted-foreground">
+                    暂无不可改动事实
+                  </p>
+                )}
               </div>
             </div>
           </div>
