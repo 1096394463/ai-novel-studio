@@ -27,4 +27,7 @@ public interface NovelRepository {
 
     @Delete("DELETE FROM novels WHERE id = #{id}")
     int delete(String id);
+
+    @Update("UPDATE novels SET total_words=#{totalWords}, updated_at=datetime('now') WHERE id=#{id}")
+    int updateTotalWords(@Param("id") String id, @Param("totalWords") int totalWords);
 }
