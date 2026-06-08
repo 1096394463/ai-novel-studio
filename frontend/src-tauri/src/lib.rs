@@ -14,7 +14,7 @@ fn log(log_state: &Mutex<Vec<String>>, msg: &str) {
     log_state.lock().unwrap().push(msg.to_string());
 }
 
-/// Strip Windows \\?\ prefix from paths (cmd.exe doesn't understand it)
+/// Strip Windows \\?\ prefix from paths (cmd.exe and many APIs don't understand it)
 fn strip_unc_prefix(path: &std::path::Path) -> String {
     let s = path.to_string_lossy().to_string();
     if s.starts_with(r"\\?\") {
@@ -34,7 +34,6 @@ fn get_startup_log(log_state: tauri::State<StartupLog>) -> Vec<String> {
     log_state.0.lock().unwrap().clone()
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .manage(BackendProcess(Mutex::new(None)))
@@ -54,8 +53,8 @@ pub fn run() {
             std::fs::create_dir_all(&app_data_dir).ok();
             let data_dir_str = strip_unc_prefix(&app_data_dir);
 
-            log(slog, &format!("Resource dir: {}", resource_dir.display()));
-            log(slog, &format!("App data dir: {}", app_data_dir.display()));
+            log(slog, &format!("Resource dir: {}", strip_unc_prefix(&resource_dir)));
+            log(slog, &format!("App data dir: {}", data_dir_str));
 
             // List resource dir contents
             if let Ok(entries) = std::fs::read_dir(&resource_dir) {
@@ -81,8 +80,6 @@ pub fn run() {
             if let Some(jar) = jar_path {
                 let java_cmd = find_java(&resource_dir);
                 let jar_str = strip_unc_prefix(&jar);
-                let java_log = strip_unc_prefix(&app_data_dir.join("java-stdout.log"));
-                let java_err_log = strip_unc_prefix(&app_data_dir.join("java-stderr.log"));
                 let db_url = format!("jdbc:sqlite:{}/novel-studio.db", data_dir_str);
                 let log_file = format!("{}/novel-studio.log", data_dir_str);
 
@@ -101,192 +98,77 @@ pub fn run() {
                 }
                 log(slog, &format!("✅ Java binary exists: {}", java_cmd));
 
-                // Log the full command
-                let full_cmd = format!(
-                    "\"{}\" -jar \"{}\" --server.port=18080 --server.address=127.0.0.1 --spring.profiles.active=desktop --spring.datasource.url={} --logging.file.name={}",
-                    java_cmd, jar_str, db_url, log_file
-                );
-                log(slog, &format!("CMD: {}", full_cmd));
+                // Build args
+                let args = vec![
+                    "-jar".to_string(),
+                    jar_str.clone(),
+                    "--server.port=18080".to_string(),
+                    "--server.address=127.0.0.1".to_string(),
+                    "--spring.profiles.active=desktop".to_string(),
+                    format!("--spring.datasource.url={}", db_url),
+                    format!("--logging.file.name={}", log_file),
+                ];
 
-                // Write a launcher script to capture all output
+                log(slog, &format!("CMD: {} {}", java_cmd, args.join(" ")));
+
+                // Spawn Java directly (no cmd.exe wrapper)
+                let mut cmd = Command::new(&java_cmd);
+                cmd.args(&args)
+                    .current_dir(&app_data_dir)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
+
+                // On Windows, hide the console window
                 #[cfg(target_os = "windows")]
                 {
-                    let bat_path = app_data_dir.join("start-backend.bat");
-                    let bat_path_str = strip_unc_prefix(&bat_path);
-                    let bat_content = format!(
-                        "@echo off\r\nchcp 65001 >nul\r\necho [BAT] Starting Java backend at %TIME% > \"{}\"\r\necho [BAT] Java: {} >> \"{}\"\r\necho [BAT] JAR: {} >> \"{}\"\r\necho [BAT] CWD: {} >> \"{}\"\r\n\"{}\" -jar \"{}\" --server.port=18080 --server.address=127.0.0.1 --spring.profiles.active=desktop --spring.datasource.url={} --logging.file.name={} >> \"{}\" 2>&1\r\necho [BAT] Java exited with code %ERRORLEVEL% at %TIME% >> \"{}\"\r\n",
-                        java_err_log, java_cmd, java_err_log, jar_str, java_err_log, data_dir_str, java_err_log,
-                        java_cmd, jar_str, db_url, log_file, java_err_log, java_err_log
-                    );
-                    std::fs::write(&bat_path, &bat_content).ok();
-                    log(slog, &format!("Wrote launcher: {}", bat_path_str));
+                    use std::os::windows::process::CommandExt;
+                    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                }
 
-                    let mut child = Command::new("cmd")
-                        .args(["/C", &bat_path_str])
-                        .current_dir(&app_data_dir)
-                        .stdin(Stdio::null())
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn();
+                let child = cmd.spawn();
 
-                    match child {
-                        Ok(mut child) => {
-                            let pid = child.id();
-                            log(slog, &format!("✅ Launcher spawned, PID: {}", pid));
+                match child {
+                    Ok(mut child) => {
+                        let pid = child.id();
+                        log(slog, &format!("✅ Java spawned, PID: {}", pid));
 
-                            // Wait a moment, then check
-                            std::thread::sleep(std::time::Duration::from_secs(3));
-
-                            match child.try_wait() {
-                                Ok(Some(status)) => {
-                                    log(slog, &format!("❌ Launcher exited immediately: {}", status));
-                                    // Read error log
-                                    if let Ok(content) = std::fs::read_to_string(&java_err_log) {
-                                        for line in content.lines().take(30) {
-                                            log(slog, &format!("  {}", line));
-                                        }
-                                    }
-                                    if let Some(s) = app.try_state::<BackendStatus>() {
-                                        *s.0.lock().unwrap() = format!("exited: {}", status);
-                                    }
-                                    return Ok(());
-                                }
-                                Ok(None) => {
-                                    log(slog, "✅ Launcher still running after 3s");
-                                }
-                                Err(e) => {
-                                    log(slog, &format!("try_wait error: {}", e));
+                        // Check if process is still alive after 2 seconds
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        match child.try_wait() {
+                            Ok(Some(status)) => {
+                                log(slog, &format!("❌ Java exited immediately: {}", status));
+                                log(slog, "Hint: Run the JAR manually to see error output");
+                                if let Some(s) = app.try_state::<BackendStatus>() {
+                                    *s.0.lock().unwrap() = format!("exited: {}", status);
                                 }
                             }
-
-                            if let Some(state) = app.try_state::<BackendProcess>() {
-                                *state.0.lock().unwrap() = Some(child);
+                            Ok(None) => {
+                                log(slog, "✅ Java process is running after 2s");
+                                if let Some(s) = app.try_state::<BackendStatus>() {
+                                    *s.0.lock().unwrap() = "running".to_string();
+                                }
+                                let process_state = app.state::<BackendProcess>();
+                                *process_state.0.lock().unwrap() = Some(child);
+                            }
+                            Err(e) => {
+                                log(slog, &format!("⚠️ try_wait error: {}", e));
+                                let process_state = app.state::<BackendProcess>();
+                                *process_state.0.lock().unwrap() = Some(child);
                             }
                         }
-                        Err(e) => {
-                            log(slog, &format!("❌ Failed to spawn launcher: {}", e));
-                            if let Some(s) = app.try_state::<BackendStatus>() {
-                                *s.0.lock().unwrap() = format!("spawn_error: {}", e);
-                            }
-                            return Ok(());
+                    }
+                    Err(e) => {
+                        log(slog, &format!("❌ Failed to spawn Java: {}", e));
+                        if let Some(s) = app.try_state::<BackendStatus>() {
+                            *s.0.lock().unwrap() = format!("spawn_error: {}", e);
                         }
                     }
                 }
-
-                #[cfg(not(target_os = "windows"))]
-                {
-                    let sh_path = app_data_dir.join("start-backend.sh");
-                    let sh_path_str = strip_unc_prefix(&sh_path);
-                    let sh_content = format!(
-                        "#!/bin/bash\necho \"[SH] Starting Java backend at $(date)\" > \"{}\"\n\"{}\" -jar \"{}\" --server.port=18080 --server.address=127.0.0.1 --spring.profiles.active=desktop --spring.datasource.url={} --logging.file.name={} >> \"{}\" 2>&1\necho \"[SH] Java exited with code $? at $(date)\" >> \"{}\"\n",
-                        java_err_log, java_cmd, jar_str, db_url, log_file, java_err_log, java_err_log
-                    );
-                    std::fs::write(&sh_path, &sh_content).ok();
-
-                    let mut child = Command::new("bash")
-                        .arg(&sh_path_str)
-                        .current_dir(&app_data_dir)
-                        .stdin(Stdio::null())
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn();
-
-                    match child {
-                        Ok(mut child) => {
-                            let pid = child.id();
-                            log(slog, &format!("✅ Launcher spawned, PID: {}", pid));
-
-                            std::thread::sleep(std::time::Duration::from_secs(3));
-
-                            match child.try_wait() {
-                                Ok(Some(status)) => {
-                                    log(slog, &format!("❌ Launcher exited: {}", status));
-                                    if let Ok(content) = std::fs::read_to_string(&java_err_log) {
-                                        for line in content.lines().take(30) {
-                                            log(slog, &format!("  {}", line));
-                                        }
-                                    }
-                                    if let Some(s) = app.try_state::<BackendStatus>() {
-                                        *s.0.lock().unwrap() = format!("exited: {}", status);
-                                    }
-                                    return Ok(());
-                                }
-                                Ok(None) => {
-                                    log(slog, "✅ Launcher still running after 3s");
-                                }
-                                Err(e) => {
-                                    log(slog, &format!("try_wait error: {}", e));
-                                }
-                            }
-
-                            if let Some(state) = app.try_state::<BackendProcess>() {
-                                *state.0.lock().unwrap() = Some(child);
-                            }
-                        }
-                        Err(e) => {
-                            log(slog, &format!("❌ Failed to spawn launcher: {}", e));
-                            if let Some(s) = app.try_state::<BackendStatus>() {
-                                *s.0.lock().unwrap() = format!("spawn_error: {}", e);
-                            }
-                            return Ok(());
-                        }
-                    }
-                }
-
-                // Health check with startup log
-                let app_handle = app.handle().clone();
-                let log_file_path = log_file.clone();
-                let err_log_path = strip_unc_prefix(&app_data_dir.join("java-stderr.log"));
-                thread::spawn(move || {
-                    for i in 1..=60 {
-                        thread::sleep(std::time::Duration::from_secs(1));
-
-                        // Check if launcher process is still alive
-                        if let Some(proc) = app_handle.try_state::<BackendProcess>() {
-                            if let Some(child) = proc.0.lock().unwrap().as_mut() {
-                                match child.try_wait() {
-                                    Ok(Some(status)) => {
-                                        eprintln!("[Backend] ❌ Launcher exited: {}", status);
-                                        // Read error log
-                                        if let Ok(content) = std::fs::read_to_string(&err_log_path) {
-                                            eprintln!("[Backend] Java stderr:\n{}", content);
-                                        }
-                                        *app_handle.state::<BackendStatus>().0.lock().unwrap() = format!("exited: {}", status);
-                                        return;
-                                    }
-                                    Ok(None) => {}
-                                    Err(_) => {}
-                                }
-                            }
-                        }
-
-                        match std::net::TcpStream::connect("127.0.0.1:18080") {
-                            Ok(_) => {
-                                println!("[Backend] ✅ Backend ready (attempt {}/60)", i);
-                                *app_handle.state::<BackendStatus>().0.lock().unwrap() = "ready".to_string();
-                                return;
-                            }
-                            Err(_) => {
-                                if i % 10 == 0 {
-                                    println!("[Backend] ⏳ Not ready ({}/60)", i);
-                                    // Check if java log file has content
-                                    if let Ok(content) = std::fs::read_to_string(&log_file_path) {
-                                        if !content.is_empty() {
-                                            println!("[Backend] Java log has {} bytes", content.len());
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    eprintln!("[Backend] ❌ Backend did not start within 60s!");
-                    *app_handle.state::<BackendStatus>().0.lock().unwrap() = "failed".to_string();
-                });
-
             } else {
-                log(slog, "❌ Backend JAR not found!");
-                if let Some(status) = app.try_state::<BackendStatus>() {
-                    *status.0.lock().unwrap() = "jar_not_found".to_string();
+                log(slog, &format!("❌ JAR not found in {}", strip_unc_prefix(&resource_dir)));
+                if let Some(s) = app.try_state::<BackendStatus>() {
+                    *s.0.lock().unwrap() = "jar_not_found".to_string();
                 }
             }
 
@@ -294,6 +176,77 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
+
+    // Health check: poll /api/health until backend is ready
+    {
+        let app_handle = app.handle().clone();
+        thread::spawn(move || {
+            let client = reqwest::blocking::Client::new();
+            let mut attempts = 0;
+            let max_attempts = 90; // 3 minutes
+            while attempts < max_attempts {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                attempts += 1;
+
+                // Check if Java process is still alive
+                if let Some(state) = app_handle.try_state::<BackendProcess>() {
+                    let mut guard = state.0.lock().unwrap();
+                    if let Some(ref mut child) = *guard {
+                        match child.try_wait() {
+                            Ok(Some(status)) => {
+                                println!("[Health] Java process exited: {}", status);
+                                // Read stderr log for error details
+                                if let Some(s) = app_handle.try_state::<BackendStatus>() {
+                                    *s.0.lock().unwrap() = format!("exited: {}", status);
+                                }
+                                if let Some(log_state) = app_handle.try_state::<StartupLog>() {
+                                    let mut logs = log_state.0.lock().unwrap();
+                                    logs.push(format!("❌ Java process exited: {}", status));
+                                    // Try to read java-stderr.log
+                                    let err_log = app_handle.path().app_data_dir()
+                                        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                                        .join("java-stderr.log");
+                                    if let Ok(content) = std::fs::read_to_string(&err_log) {
+                                        logs.push("--- stderr log ---".to_string());
+                                        for line in content.lines().take(20) {
+                                            logs.push(format!("  {}", line));
+                                        }
+                                    }
+                                }
+                                break;
+                            }
+                            Ok(None) => { /* still running */ }
+                            Err(_) => break,
+                        }
+                    }
+                }
+
+                match client.get("http://localhost:18080/api/health").send() {
+                    Ok(resp) if resp.status().is_success() => {
+                        println!("[Health] Backend is ready!");
+                        if let Some(s) = app_handle.try_state::<BackendStatus>() {
+                            *s.0.lock().unwrap() = "ready".to_string();
+                        }
+                        break;
+                    }
+                    _ => {
+                        if attempts % 5 == 0 {
+                            println!("[Health] Waiting... attempt {}/{}", attempts, max_attempts);
+                        }
+                    }
+                }
+            }
+            if attempts >= max_attempts {
+                println!("[Health] Backend did not become ready within timeout");
+                if let Some(s) = app_handle.try_state::<BackendStatus>() {
+                    let current = s.0.lock().unwrap().clone();
+                    if current == "running" {
+                        *s.0.lock().unwrap() = "timeout".to_string();
+                    }
+                }
+            }
+        });
+    }
 
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
@@ -329,11 +282,12 @@ fn find_file(resource_dir: &std::path::Path, exact: &str, _pattern: &str) -> Opt
     let dev_paths = vec![
         std::path::PathBuf::from("../backend/target/novel-studio-backend-0.1.0.jar"),
         std::path::PathBuf::from("backend/target/novel-studio-backend-0.1.0.jar"),
+        std::path::PathBuf::from("../backend/build/libs/novel-studio-backend.jar"),
     ];
 
-    for p in dev_paths {
-        if p.exists() {
-            return Some(p);
+    for dev_path in dev_paths {
+        if dev_path.exists() {
+            return Some(dev_path);
         }
     }
 
