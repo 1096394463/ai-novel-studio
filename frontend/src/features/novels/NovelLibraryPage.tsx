@@ -30,7 +30,7 @@ const statusColors: Record<string, string> = {
 };
 
 export function NovelLibraryPage() {
-  const { novels, loading, error, fetchNovels, createNovel } = useNovelStore();
+  const { novels, loading, error, fetchNovels, createNovel, setCurrentNovelId } = useNovelStore();
   const navigate = useNavigate();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newNovel, setNewNovel] = useState({
@@ -57,6 +57,7 @@ export function NovelLibraryPage() {
       });
       setShowCreateDialog(false);
       setNewNovel({ title: "", genre: "", synopsis: "", targetDailyWords: 2000 });
+      setCurrentNovelId(novel.id);
       navigate(`/editor/${novel.id}`);
     } catch (error) {
       console.error("Failed to create novel:", error);
@@ -165,6 +166,7 @@ export function NovelLibraryPage() {
           <Link
             key={novel.id}
             to={`/editor/${novel.id}`}
+            onClick={() => setCurrentNovelId(novel.id)}
             className="block p-4 bg-card rounded-lg border hover:shadow-md transition-all hover:border-primary/30 group"
           >
             <div className="flex items-start gap-4">
