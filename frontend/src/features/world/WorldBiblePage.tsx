@@ -501,7 +501,7 @@ export function WorldBiblePage() {
                 )}
                 {facts.map((fact) => (
                   <div key={fact.id} className="flex items-center justify-between p-2 border rounded-md text-sm">
-                    <span>{fact.content}</span>
+                    <span>{fact.fact || fact.content}</span>
                     <button onClick={() => handleDeleteFact(fact.id)} className="text-destructive hover:underline text-xs">删除</button>
                   </div>
                 ))}
