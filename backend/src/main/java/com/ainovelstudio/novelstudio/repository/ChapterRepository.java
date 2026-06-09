@@ -8,7 +8,7 @@ import java.util.List;
 @Mapper
 public interface ChapterRepository {
 
-    @Select("SELECT * FROM chapters WHERE novel_id = #{novelId} ORDER BY sort_order")
+    @Select("SELECT * FROM chapters WHERE novel_id = #{novelId} ORDER BY sort_order DESC")
     List<Chapter> findByNovelId(String novelId);
 
     @Select("SELECT * FROM chapters WHERE id = #{id}")

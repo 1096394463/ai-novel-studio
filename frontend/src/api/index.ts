@@ -125,6 +125,34 @@ export const ideaApi = {
       method: "POST",
       body: JSON.stringify({ chapterId }),
     }),
+  delete: (id: string) =>
+    request<void>(`/ideas/${id}`, { method: "DELETE" }),
+  listGlobal: () => request<Idea[]>(`/ideas`),
+  createGlobal: (data: Partial<Idea>) =>
+    request<Idea>(`/ideas`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+};
+
+// Annotation API
+export const annotationApi = {
+  listByChapter: (chapterId: string) =>
+    request<Annotation[]>(`/chapters/${chapterId}/annotations`),
+  listByNovel: (novelId: string) =>
+    request<Annotation[]>(`/novels/${novelId}/annotations`),
+  create: (data: Partial<Annotation>) =>
+    request<Annotation>(`/annotations`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: Partial<Annotation>) =>
+    request<Annotation>(`/annotations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    request<void>(`/annotations/${id}`, { method: "DELETE" }),
 };
 
 // Graph API

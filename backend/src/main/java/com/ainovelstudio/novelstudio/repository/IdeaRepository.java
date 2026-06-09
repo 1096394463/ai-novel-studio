@@ -32,4 +32,11 @@ public interface IdeaRepository {
 
     @Delete("DELETE FROM ideas WHERE id = #{id}")
     int delete(String id);
+
+    @Select("SELECT * FROM ideas WHERE novel_id IS NULL OR novel_id = '' ORDER BY created_at DESC")
+    @Results({
+        @Result(property = "tags", column = "tags", typeHandler = com.ainovelstudio.novelstudio.config.JsonStringListTypeHandler.class),
+        @Result(property = "relatedEntityIds", column = "related_entity_ids", typeHandler = com.ainovelstudio.novelstudio.config.JsonStringListTypeHandler.class)
+    })
+    List<Idea> findGlobal();
 }
