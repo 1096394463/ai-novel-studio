@@ -160,22 +160,34 @@ export function EditorPage() {
     },
   });
 
-  // Sync editor content when chapter changes
+  // Sync editor content when selected chapter changes (direct fetch, not relying on store)
   useEffect(() => {
-    if (editor && currentChapter) {
-      setIsContentReady(false);
+    if (!editor || !selectedChapterId) {
+      if (editor && !selectedChapterId) {
+        setIsContentReady(false);
+        editor.commands.setContent("");
+      }
+      return;
+    }
+    let cancelled = false;
+    setIsContentReady(false);
+    chapterApi.get(selectedChapterId).then((ch) => {
+      if (cancelled) return;
       try {
-        const content = currentChapter.contentJson
-          ? JSON.parse(currentChapter.contentJson)
-          : "";
+        const content = ch.contentJson ? JSON.parse(ch.contentJson) : "";
         editor.commands.setContent(content);
       } catch {
         editor.commands.setContent("");
       }
-      // Small delay to prevent auto-save from firing during content sync
-      setTimeout(() => setIsContentReady(true), 300);
-    }
-  }, [editor, currentChapter?.id]);
+      setTimeout(() => { if (!cancelled) setIsContentReady(true); }, 300);
+    }).catch(() => {
+      if (!cancelled) {
+        editor.commands.setContent("");
+        setIsContentReady(true);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [editor, selectedChapterId]);
 
   // Force save every 10 seconds
   useEffect(() => {
