@@ -10,6 +10,8 @@ import { Layout } from "./components/Layout";
 import { BootScreen } from "./components/BootScreen";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SelectNovelPrompt } from "./components/SelectNovelPrompt";
+import { ReadPage } from "./features/reading/ReadPage";
+import { InspirationPage } from "./features/inspiration/InspirationPage";
 
 function EditorWrapper() {
   const { novelId } = useParams();
@@ -55,6 +57,9 @@ function App() {
           <Route path="world" element={<WorldWrapper />} />
           <Route path="graph/:novelId" element={<GraphWrapper />} />
           <Route path="graph" element={<GraphWrapper />} />
+          <Route path="read/:novelId" element={<ReadPage />} />
+          <Route path="read" element={<ReadPage />} />
+          <Route path="inspiration" element={<InspirationPage />} />
           <Route path="publishing" element={<PublishingPage />} />
           <Route
             path="settings"
