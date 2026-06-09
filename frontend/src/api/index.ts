@@ -91,6 +91,8 @@ export const entityApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+  delete: (id: string) =>
+    request<void>(`/entities/${id}`, { method: "DELETE" }),
   addFact: (entityId: string, fact: Partial<ImmutableFact>) =>
     request<ImmutableFact>(`/entities/${entityId}/facts`, {
       method: "POST",

@@ -97,6 +97,7 @@ interface ChapterStore {
 
   fetchChapters: (novelId: string) => Promise<void>;
   fetchChapter: (id: string) => Promise<void>;
+  resetChapters: () => void;
   createChapter: (novelId: string, data: Partial<Chapter>) => Promise<Chapter>;
   updateChapter: (id: string, data: Partial<Chapter>) => Promise<void>;
   saveChapter: (
@@ -170,6 +171,10 @@ export const useChapterStore = create<ChapterStore>((set) => ({
     } catch (error) {
       set({ error: (error as Error).message });
     }
+  },
+
+  resetChapters: () => {
+    set({ chapters: [], currentChapter: null });
   },
 }));
 
