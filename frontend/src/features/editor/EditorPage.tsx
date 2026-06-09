@@ -241,16 +241,34 @@ export function EditorPage() {
     if (!confirm("确定删除此章节？")) return;
     try {
       await chapterApi.delete(chapterId);
+      const remaining = chapters.filter((c) => c.id !== chapterId);
       if (selectedChapterId === chapterId) {
-        const remaining = chapters.filter((c) => c.id !== chapterId);
+        // Clear editor immediately
+        if (editor) {
+          setIsContentReady(false);
+          editor.commands.setContent("");
+        }
         if (remaining.length > 0) {
           setSelectedChapterId(remaining[0].id);
-          fetchChapter(remaining[0].id);
+          // Fetch fresh chapter data and update editor directly
+          const fresh = await chapterApi.get(remaining[0].id);
+          if (editor && fresh) {
+            try {
+              const content = fresh.contentJson ? JSON.parse(fresh.contentJson) : "";
+              editor.commands.setContent(content);
+            } catch { editor.commands.setContent(""); }
+            setTimeout(() => setIsContentReady(true), 300);
+          }
         } else {
           setSelectedChapterId(null);
+          setIsContentReady(true);
         }
       }
-      fetchChapters(novelId!);
+      // Refresh chapter list + novel word count
+      if (novelId) {
+        fetchChapters(novelId);
+        novelApi.recalculateWords(novelId).catch(() => {});
+      }
     } catch (error: any) {
       alert(error.message || "删除章节失败");
     }
