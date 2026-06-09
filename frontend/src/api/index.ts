@@ -16,7 +16,10 @@ async function request<T>(
     throw new Error(`API error: ${response.status} ${response.statusText}`);
   }
 
-  return response.json();
+  // Handle void/empty responses (204 No Content or empty body)
+  const text = await response.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text);
 }
 
 // Novel API
