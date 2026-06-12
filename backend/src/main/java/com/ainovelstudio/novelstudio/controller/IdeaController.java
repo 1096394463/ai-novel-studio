@@ -58,4 +58,14 @@ public class IdeaController {
         ideaService.delete(id);
         return ResponseEntity.ok().build();
     }
+
+    @GetMapping("/ideas")
+    public List<Idea> listGlobal() {
+        return ideaService.findGlobal();
+    }
+
+    @PostMapping("/ideas")
+    public Idea createGlobal(@RequestBody Idea idea) {
+        return ideaService.create(idea);
+    }
 }

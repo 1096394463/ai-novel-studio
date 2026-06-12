@@ -77,4 +77,10 @@ public class ChapterController {
         chapterService.restoreVersion(id, versionId);
         return ResponseEntity.ok().build();
     }
+
+    @DeleteMapping("/chapters/{id}")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
+        chapterService.delete(id);
+        return ResponseEntity.ok().build();
+    }
 }

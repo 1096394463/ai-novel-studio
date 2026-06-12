@@ -16,7 +16,10 @@ async function request<T>(
     throw new Error(`API error: ${response.status} ${response.statusText}`);
   }
 
-  return response.json();
+  // Handle void/empty responses (204 No Content or empty body)
+  const text = await response.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text);
 }
 
 // Novel API
@@ -31,6 +34,10 @@ export const novelApi = {
     request<void>(`/novels/${id}/lock`, { method: "POST" }),
   unlock: (id: string) =>
     request<void>(`/novels/${id}/unlock`, { method: "POST" }),
+  delete: (id: string) =>
+    request<void>(`/novels/${id}`, { method: "DELETE" }),
+  recalculateWords: (id: string) =>
+    request<Novel>(`/novels/${id}/recalculate-words`, { method: "POST" }),
 };
 
 // Chapter API
@@ -53,6 +60,8 @@ export const chapterApi = {
       method: "POST",
       body: JSON.stringify(content),
     }),
+  delete: (id: string) =>
+    request<void>(`/chapters/${id}`, { method: "DELETE" }),
   lock: (id: string) =>
     request<void>(`/chapters/${id}/lock`, { method: "POST" }),
   unlock: (id: string) =>
@@ -82,6 +91,8 @@ export const entityApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+  delete: (id: string) =>
+    request<void>(`/entities/${id}`, { method: "DELETE" }),
   addFact: (entityId: string, fact: Partial<ImmutableFact>) =>
     request<ImmutableFact>(`/entities/${entityId}/facts`, {
       method: "POST",
@@ -91,6 +102,8 @@ export const entityApi = {
     request<void>(`/entities/${entityId}/facts/${factId}`, {
       method: "DELETE",
     }),
+  getFacts: (entityId: string) =>
+    request<ImmutableFact[]>(`/entities/${entityId}/facts`),
 };
 
 // Idea API
@@ -112,6 +125,34 @@ export const ideaApi = {
       method: "POST",
       body: JSON.stringify({ chapterId }),
     }),
+  delete: (id: string) =>
+    request<void>(`/ideas/${id}`, { method: "DELETE" }),
+  listGlobal: () => request<Idea[]>(`/ideas`),
+  createGlobal: (data: Partial<Idea>) =>
+    request<Idea>(`/ideas`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+};
+
+// Annotation API
+export const annotationApi = {
+  listByChapter: (chapterId: string) =>
+    request<Annotation[]>(`/chapters/${chapterId}/annotations`),
+  listByNovel: (novelId: string) =>
+    request<Annotation[]>(`/novels/${novelId}/annotations`),
+  create: (data: Partial<Annotation>) =>
+    request<Annotation>(`/annotations`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: Partial<Annotation>) =>
+    request<Annotation>(`/annotations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    request<void>(`/annotations/${id}`, { method: "DELETE" }),
 };
 
 // Graph API

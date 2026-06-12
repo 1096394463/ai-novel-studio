@@ -48,6 +48,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.86.0
           targets: ${{ matrix.target }}
 
       - name: Install Linux dependencies
@@ -70,29 +71,17 @@ jobs:
           mkdir -p frontend/src-tauri/backend
           cp backend/target/novel-studio-backend-*.jar frontend/src-tauri/backend/novel-studio-backend.jar
 
-      - name: Download and bundle JRE
+      - name: Bundle JRE from setup-java
         shell: bash
         run: |
           mkdir -p frontend/src-tauri/backend/jre
-
-          if [ "${{ matrix.jre_platform }}" = "windows-x64" ]; then
-            curl -L -o jre.zip "https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse"
-            7z x jre.zip -ojre_extract
-            mv jre_extract/jdk-21*/* frontend/src-tauri/backend/jre/
-          elif [ "${{ matrix.jre_platform }}" = "mac-aarch64" ]; then
-            curl -L -o jre.tar.gz "https://api.adoptium.net/v3/binary/latest/21/ga/mac/aarch64/jre/hotspot/normal/eclipse"
-            tar xzf jre.tar.gz
-            mv jdk-21*/Contents/Home/* frontend/src-tauri/backend/jre/
-          elif [ "${{ matrix.jre_platform }}" = "mac-x64" ]; then
-            curl -L -o jre.tar.gz "https://api.adoptium.net/v3/binary/latest/21/ga/mac/x64/jre/hotspot/normal/eclipse"
-            tar xzf jre.tar.gz
-            mv jdk-21*/Contents/Home/* frontend/src-tauri/backend/jre/
+          echo "JAVA_HOME=$JAVA_HOME"
+          # Copy the installed JDK as bundled JRE
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp -r "$JAVA_HOME"/* frontend/src-tauri/backend/jre/
           else
-            curl -L -o jre.tar.gz "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jre/hotspot/normal/eclipse"
-            tar xzf jre.tar.gz
-            mv jdk-21*-jre/* frontend/src-tauri/backend/jre/
+            cp -r "$JAVA_HOME"/* frontend/src-tauri/backend/jre/
           fi
-
           echo "JRE bundled successfully"
           ls frontend/src-tauri/backend/jre/bin/ | head -5
 

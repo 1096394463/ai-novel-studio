@@ -6,12 +6,12 @@ import { WorldBiblePage } from "./features/world/WorldBiblePage";
 import { GraphMapPage } from "./features/graph/GraphMapPage";
 import { PublishingPage } from "./features/publishing/PublishingPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { ReadPage } from "./features/reading/ReadPage";
+import { InspirationPage } from "./features/inspiration/InspirationPage";
 import { Layout } from "./components/Layout";
 import { BootScreen } from "./components/BootScreen";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SelectNovelPrompt } from "./components/SelectNovelPrompt";
-import { ReadPage } from "./features/reading/ReadPage";
-import { InspirationPage } from "./features/inspiration/InspirationPage";
 
 function EditorWrapper() {
   const { novelId } = useParams();
@@ -33,6 +33,12 @@ function GraphWrapper() {
       <GraphMapPage />
     </ErrorBoundary>
   );
+}
+
+function ReadWrapper() {
+  const { novelId } = useParams();
+  if (!novelId) return <SelectNovelPrompt pageName="阅读" />;
+  return <ReadPage />;
 }
 
 function App() {
@@ -57,8 +63,8 @@ function App() {
           <Route path="world" element={<WorldWrapper />} />
           <Route path="graph/:novelId" element={<GraphWrapper />} />
           <Route path="graph" element={<GraphWrapper />} />
-          <Route path="read/:novelId" element={<ReadPage />} />
-          <Route path="read" element={<ReadPage />} />
+          <Route path="read/:novelId" element={<ReadWrapper />} />
+          <Route path="read" element={<ReadWrapper />} />
           <Route path="inspiration" element={<InspirationPage />} />
           <Route path="publishing" element={<PublishingPage />} />
           <Route

@@ -212,3 +212,16 @@ export interface PublishJob {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface Annotation {
+  id: string;
+  chapterId: string;
+  novelId: string;
+  startOffset: number;
+  endOffset: number;
+  selectedText: string;
+  content: string;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -144,6 +144,10 @@ export function GraphMapPage() {
   const [newEdgeSource, setNewEdgeSource] = useState("");
   const [newEdgeTarget, setNewEdgeTarget] = useState("");
   const [newEdgeType, setNewEdgeType] = useState(relationTypes[0]);
+  const [error, setError] = useState<string | null>(null);
+  const [showNewMap, setShowNewMap] = useState(false);
+  const [newMapTitle, setNewMapTitle] = useState("");
+  const [newMapType, setNewMapType] = useState("world");
 
   useEffect(() => {
     if (novelId) {
@@ -156,6 +160,7 @@ export function GraphMapPage() {
     if (!novelId) return;
     try {
       const data = await graphApi.get(novelId);
+      setError(null);
 
       // Convert to React Flow format
       const flowNodes: Node[] = data.nodes.map((node) => ({
@@ -186,7 +191,7 @@ export function GraphMapPage() {
       setNodes(flowNodes);
       setEdges(flowEdges);
     } catch (error) {
-      console.error("Failed to load graph:", error);
+      setError(error.message || "加载图谱失败");
     }
   };
 
@@ -196,7 +201,7 @@ export function GraphMapPage() {
       const data = await mapApi.list(novelId);
       setMaps(data);
     } catch (error) {
-      console.error("Failed to load maps:", error);
+      setError(error.message || "加载地图失败");
     }
   };
 
@@ -260,7 +265,7 @@ export function GraphMapPage() {
         label: newNodeLabel.trim(),
         x: Math.random() * 500,
         y: Math.random() * 300,
-        styleJson: { color: nodeTypeColors[newNodeType] },
+        styleJson: JSON.stringify({ color: nodeTypeColors[newNodeType] }),
       });
 
       setNodes((nds) => [
@@ -280,11 +285,12 @@ export function GraphMapPage() {
       setNewNodeLabel("");
       setShowNewNode(false);
     } catch (error) {
-      console.error("Failed to add node:", error);
+      setError(error.message || "添加节点失败");
     }
   };
 
   const handleDeleteNode = async (nodeId: string) => {
+    if (!nodeId) return;
     try {
       await graphApi.deleteNode(nodeId);
       setNodes((nds) => nds.filter((n) => n.id !== nodeId));
@@ -292,8 +298,8 @@ export function GraphMapPage() {
         eds.filter((e) => e.source !== nodeId && e.target !== nodeId)
       );
       setSelectedNode(null);
-    } catch (error) {
-      console.error("Failed to delete node:", error);
+    } catch (error: any) {
+      setError(error.message || "删除节点失败");
     }
   };
 
@@ -304,7 +310,7 @@ export function GraphMapPage() {
         y: position.y,
       });
     } catch (error) {
-      console.error("Failed to update node position:", error);
+      setError(error.message || "更新位置失败");
     }
   };
 
@@ -318,7 +324,7 @@ export function GraphMapPage() {
         label: newEdgeType,
         description: "",
         evidenceChapterIds: [],
-        styleJson: {},
+        styleJson: JSON.stringify({}),
       });
 
       setEdges((eds) => [
@@ -342,7 +348,7 @@ export function GraphMapPage() {
       setNewEdgeSource("");
       setNewEdgeTarget("");
     } catch (error) {
-      console.error("Failed to add edge:", error);
+      setError(error.message || "添加关系失败");
     }
   };
 
@@ -352,12 +358,24 @@ export function GraphMapPage() {
       setEdges((eds) => eds.filter((e) => e.id !== edgeId));
       setSelectedEdge(null);
     } catch (error) {
-      console.error("Failed to delete edge:", error);
+      setError(error.message || "删除关系失败");
     }
   };
 
   const handleNodeDragStop = async (_: React.MouseEvent, node: Node) => {
     await handleUpdateNodePosition(node.id, node.position);
+  };
+
+  const handleCreateMap = async () => {
+    if (!novelId || !newMapTitle.trim()) return;
+    try {
+      const m = await mapApi.create(novelId, { title: newMapTitle.trim(), mapType: newMapType });
+      setMaps([...maps, m]);
+      setNewMapTitle("");
+      setShowNewMap(false);
+    } catch (error: any) {
+      setError(error.message || "创建地图失败");
+    }
   };
 
   // Node type options for dropdown
@@ -381,6 +399,14 @@ export function GraphMapPage() {
 
   return (
     <div className="flex h-full">
+      {/* Error Toast */}
+      {error && (
+        <div className="fixed top-4 right-4 z-50 bg-destructive text-destructive-foreground px-4 py-2 rounded-md shadow-lg flex items-center gap-2">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="hover:opacity-80">✕</button>
+        </div>
+      )}
+
       {/* Left Panel - Controls */}
       <aside className="w-64 border-r bg-card overflow-y-auto">
         <div className="p-4">
@@ -595,10 +621,38 @@ export function GraphMapPage() {
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-medium">地图列表</h3>
-                  <button className="p-1 rounded hover:bg-accent">
+                  <button onClick={() => setShowNewMap(true)} className="p-1 rounded hover:bg-accent">
                     <Plus className="w-4 h-4" />
                   </button>
                 </div>
+
+                {showNewMap && (
+                  <div className="p-3 border rounded-md mb-3">
+                    <input
+                      type="text"
+                      value={newMapTitle}
+                      onChange={(e) => setNewMapTitle(e.target.value)}
+                      placeholder="地图名称"
+                      className="w-full px-2 py-1 text-sm border rounded mb-2"
+                      onKeyDown={(e) => { if (e.key === "Enter") handleCreateMap(); if (e.key === "Escape") setShowNewMap(false); }}
+                    />
+                    <select
+                      value={newMapType}
+                      onChange={(e) => setNewMapType(e.target.value)}
+                      className="w-full px-2 py-1 text-sm border rounded mb-2"
+                    >
+                      <option value="world">世界地图</option>
+                      <option value="city">城市地图</option>
+                      <option value="route">路线图</option>
+                      <option value="battle">战场图</option>
+                    </select>
+                    <div className="flex gap-2">
+                      <button onClick={handleCreateMap} className="flex-1 px-2 py-1 text-xs bg-primary text-primary-foreground rounded">创建</button>
+                      <button onClick={() => setShowNewMap(false)} className="flex-1 px-2 py-1 text-xs border rounded">取消</button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-1">
                   {maps.map((map) => (
                     <button

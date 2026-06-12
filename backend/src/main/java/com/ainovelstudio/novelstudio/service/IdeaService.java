@@ -19,6 +19,10 @@ public class IdeaService {
         return ideaRepository.findByNovelId(novelId);
     }
 
+    public List<Idea> findGlobal() {
+        return ideaRepository.findGlobal();
+    }
+
     public Idea findById(String id) {
         return ideaRepository.findById(id);
     }
