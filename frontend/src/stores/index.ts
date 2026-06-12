@@ -18,6 +18,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 10, delayMs = 100
 interface NovelStore {
   novels: Novel[];
   currentNovel: Novel | null;
+  currentNovelId: string | null;
   loading: boolean;
   error: string | null;
 
@@ -25,11 +26,13 @@ interface NovelStore {
   fetchNovel: (id: string) => Promise<void>;
   createNovel: (data: Partial<Novel>) => Promise<Novel>;
   updateNovel: (id: string, data: Partial<Novel>) => Promise<void>;
+  setCurrentNovelId: (id: string) => void;
 }
 
 export const useNovelStore = create<NovelStore>((set) => ({
   novels: [],
   currentNovel: null,
+  currentNovelId: null,
   loading: false,
   error: null,
 
@@ -82,6 +85,8 @@ export const useNovelStore = create<NovelStore>((set) => ({
       set({ error: (error as Error).message, loading: false });
     }
   },
+
+  setCurrentNovelId: (id: string) => set({ currentNovelId: id }),
 }));
 
 interface ChapterStore {
@@ -92,6 +97,8 @@ interface ChapterStore {
 
   fetchChapters: (novelId: string) => Promise<void>;
   fetchChapter: (id: string) => Promise<void>;
+  resetChapters: () => void;
+  clearCurrentChapter: () => void;
   createChapter: (novelId: string, data: Partial<Chapter>) => Promise<Chapter>;
   updateChapter: (id: string, data: Partial<Chapter>) => Promise<void>;
   saveChapter: (
@@ -165,6 +172,14 @@ export const useChapterStore = create<ChapterStore>((set) => ({
     } catch (error) {
       set({ error: (error as Error).message });
     }
+  },
+
+  resetChapters: () => {
+    set({ chapters: [], currentChapter: null });
+  },
+
+  clearCurrentChapter: () => {
+    set({ currentChapter: null });
   },
 }));
 

@@ -38,7 +38,7 @@ import {
   Check,
 } from "lucide-react";
 import { useNovelStore, useChapterStore } from "@/stores";
-import { aiApi, chapterApi } from "@/api";
+import { aiApi, chapterApi, novelApi } from "@/api";
 import type { ChapterVersion, AiTask } from "@/types";
 
 export function EditorPage() {
@@ -53,13 +53,16 @@ export function EditorPage() {
     createChapter,
     updateChapter,
     saveChapter,
+    clearCurrentChapter,
   } = useChapterStore();
 
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(
     null
   );
+  const [isContentReady, setIsContentReady] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [showSaving, setShowSaving] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
   const [versions, setVersions] = useState<ChapterVersion[]>([]);
   const [showNewChapter, setShowNewChapter] = useState(false);
@@ -75,10 +78,14 @@ export function EditorPage() {
 
   useEffect(() => {
     if (novelId) {
+      clearCurrentChapter(); // Clear store state first
+      setSelectedChapterId(null);
+      setIsContentReady(false);
+      if (editor) editor.commands.setContent(""); // Clear editor immediately
       fetchNovel(novelId);
       fetchChapters(novelId);
     }
-  }, [novelId, fetchNovel, fetchChapters]);
+  }, [novelId]);
 
   useEffect(() => {
     if (chapters.length > 0 && !selectedChapterId) {
@@ -91,11 +98,20 @@ export function EditorPage() {
     async (content: { contentJson: string; contentText: string }) => {
       if (!selectedChapterId) return;
       setIsSaving(true);
+      // Only show "saving" indicator if save takes > 500ms
+      const timer = setTimeout(() => setShowSaving(true), 500);
       try {
         await saveChapter(selectedChapterId, content);
         setLastSaved(new Date());
+        // Refresh chapter list to update word count
+        if (novelId) {
+          fetchChapters(novelId);
+          novelApi.recalculateWords(novelId).catch(() => {});
+        }
       } finally {
+        clearTimeout(timer);
         setIsSaving(false);
+        setShowSaving(false);
       }
     },
     [selectedChapterId, saveChapter]
@@ -121,6 +137,7 @@ export function EditorPage() {
       ? JSON.parse(currentChapter.contentJson)
       : "",
     onUpdate: ({ editor }) => {
+      if (!isContentReady) return; // Don't save during content sync
       // Track selected text
       const { from, to } = editor.state.selection;
       const text = editor.state.doc.textBetween(from, to, "");
@@ -146,10 +163,39 @@ export function EditorPage() {
     },
   });
 
+  // Sync editor content when selected chapter changes (direct fetch, not relying on store)
+  useEffect(() => {
+    if (!editor || !selectedChapterId) {
+      if (editor && !selectedChapterId) {
+        setIsContentReady(false);
+        editor.commands.setContent("");
+      }
+      return;
+    }
+    let cancelled = false;
+    setIsContentReady(false);
+    chapterApi.get(selectedChapterId).then((ch) => {
+      if (cancelled) return;
+      try {
+        const content = ch.contentJson ? JSON.parse(ch.contentJson) : "";
+        editor.commands.setContent(content);
+      } catch {
+        editor.commands.setContent("");
+      }
+      setTimeout(() => { if (!cancelled) setIsContentReady(true); }, 300);
+    }).catch(() => {
+      if (!cancelled) {
+        editor.commands.setContent("");
+        setIsContentReady(true);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [editor, selectedChapterId]);
+
   // Force save every 10 seconds
   useEffect(() => {
     forceSaveIntervalRef.current = setInterval(() => {
-      if (editor && editor.isFocused) {
+      if (editor && editor.isFocused && isContentReady) {
         const json = editor.getJSON();
         const text = editor.getText();
         handleSave({
@@ -175,16 +221,6 @@ export function EditorPage() {
     };
   }, []);
 
-  // Update editor content when chapter changes
-  useEffect(() => {
-    if (editor && currentChapter) {
-      const content = currentChapter.contentJson
-        ? JSON.parse(currentChapter.contentJson)
-        : "";
-      editor.commands.setContent(content);
-    }
-  }, [editor, currentChapter?.id]);
-
   const handleChapterSelect = async (chapterId: string) => {
     setSelectedChapterId(chapterId);
     await fetchChapter(chapterId);
@@ -209,19 +245,37 @@ export function EditorPage() {
   const handleDeleteChapter = async (chapterId: string) => {
     if (!confirm("确定删除此章节？")) return;
     try {
-      await chapterApi.delete?.(chapterId);
+      await chapterApi.delete(chapterId);
+      const remaining = chapters.filter((c) => c.id !== chapterId);
       if (selectedChapterId === chapterId) {
-        const remaining = chapters.filter((c) => c.id !== chapterId);
+        // Clear editor immediately
+        if (editor) {
+          setIsContentReady(false);
+          editor.commands.setContent("");
+        }
         if (remaining.length > 0) {
           setSelectedChapterId(remaining[0].id);
-          fetchChapter(remaining[0].id);
+          // Fetch fresh chapter data and update editor directly
+          const fresh = await chapterApi.get(remaining[0].id);
+          if (editor && fresh) {
+            try {
+              const content = fresh.contentJson ? JSON.parse(fresh.contentJson) : "";
+              editor.commands.setContent(content);
+            } catch { editor.commands.setContent(""); }
+            setTimeout(() => setIsContentReady(true), 300);
+          }
         } else {
           setSelectedChapterId(null);
+          setIsContentReady(true);
         }
       }
-      fetchChapters(novelId!);
-    } catch (error) {
-      console.error("Failed to delete chapter:", error);
+      // Refresh chapter list + novel word count
+      if (novelId) {
+        fetchChapters(novelId);
+        novelApi.recalculateWords(novelId).catch(() => {});
+      }
+    } catch (error: any) {
+      alert(error.message || "删除章节失败");
     }
   };
 
@@ -234,8 +288,9 @@ export function EditorPage() {
         await chapterApi.lock(selectedChapterId);
       }
       fetchChapter(selectedChapterId);
-    } catch (error) {
-      console.error("Failed to toggle lock:", error);
+      if (novelId) fetchChapters(novelId);
+    } catch (error: any) {
+      alert(error.message || "锁定操作失败");
     }
   };
 
@@ -254,10 +309,24 @@ export function EditorPage() {
     if (!selectedChapterId) return;
     try {
       await chapterApi.restoreVersion(selectedChapterId, versionId);
-      fetchChapter(selectedChapterId);
+      // Fetch fresh chapter data directly and update editor
+      const freshChapter = await chapterApi.get(selectedChapterId);
+      if (editor && freshChapter) {
+        setIsContentReady(false);
+        try {
+          const content = freshChapter.contentJson
+            ? JSON.parse(freshChapter.contentJson)
+            : "";
+          editor.commands.setContent(content);
+        } catch {
+          editor.commands.setContent("");
+        }
+        setTimeout(() => setIsContentReady(true), 300);
+      }
+      if (novelId) fetchChapters(novelId);
       setShowVersions(false);
-    } catch (error) {
-      console.error("Failed to restore version:", error);
+    } catch (error: any) {
+      alert(error.message || "恢复版本失败");
     }
   };
 
@@ -364,7 +433,7 @@ export function EditorPage() {
     }
   };
 
-  const wordCount = currentChapter?.wordCount || 0;
+  const wordCount = editor?.storage?.characterCount?.characters?.() ?? currentChapter?.wordCount ?? 0;
   const lockedWords = currentChapter?.lockedUntilOffset || 0;
 
   return (
@@ -602,7 +671,7 @@ export function EditorPage() {
 
           {/* Save Status */}
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {isSaving ? (
+            {showSaving ? (
               <>
                 <Save className="w-4 h-4 animate-spin" />
                 <span>保存中...</span>
